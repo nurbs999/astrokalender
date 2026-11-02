@@ -64,9 +64,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Upload Form Meta
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
-  const [telescope, setTelescope] = useState('');
-  const [exposure, setExposure] = useState('');
-  const [description, setDescription] = useState('');
 
   // Edit Photo state
   const [editingPhoto, setEditingPhoto] = useState<Photo | null>(null);
@@ -181,9 +178,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       await uploadPhoto(compressionResult.blob, compressionResult.file.name, {
         title: title.trim(),
         author: author.trim(),
-        telescope: telescope.trim() || undefined,
-        exposure: exposure.trim() || undefined,
-        description: description.trim() || undefined,
       });
 
       setUploadSuccess(`Foto "${title}" wurde erfolgreich verarbeitet und hochgeladen!`);
@@ -192,9 +186,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setCompressionResult(null);
       setTitle('');
       setAuthor('');
-      setTelescope('');
-      setExposure('');
-      setDescription('');
 
       onPhotosUpdated();
       loadDashboardData();
@@ -226,9 +217,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       await updatePhoto(editingPhoto.id, {
         title: editingPhoto.title,
         author: editingPhoto.author,
-        telescope: editingPhoto.telescope,
-        exposure: editingPhoto.exposure,
-        description: editingPhoto.description,
       });
       setEditingPhoto(null);
       onPhotosUpdated();
@@ -695,45 +683,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     className="w-full px-3.5 py-2.5 rounded-xl bg-space-850 border border-white/10 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-astro-cyan"
                   />
                 </div>
-
-                <div>
-                  <label className="block text-xs font-mono text-slate-300 mb-1">
-                    Teleskop / Optik (optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={telescope}
-                    onChange={(e) => setTelescope(e.target.value)}
-                    placeholder="z. B. Sky-Watcher Esprit 100ED"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-space-850 border border-white/10 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-astro-cyan"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-mono text-slate-300 mb-1">
-                    Belichtungsdetails (optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={exposure}
-                    onChange={(e) => setExposure(e.target.value)}
-                    placeholder="z. B. 48 × 300s, ISO 800"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-space-850 border border-white/10 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-astro-cyan"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-mono text-slate-300 mb-1">
-                  Beschreibung / Besonderheiten (optional)
-                </label>
-                <textarea
-                  rows={2}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Hintergrundinfos zum Deep-Sky-Objekt..."
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-space-850 border border-white/10 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-astro-cyan resize-none"
-                />
               </div>
 
               {uploadError && (
@@ -793,6 +742,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <tr className="border-b border-white/10 text-slate-400 font-mono">
                     <th className="py-3 px-4">Name</th>
                     <th className="py-3 px-4">E-Mail</th>
+                    <th className="py-3 px-4">E-Mail Status</th>
                     <th className="py-3 px-4">Abgegebene Stimmen</th>
                     <th className="py-3 px-4">Zuletzt aktiv</th>
                   </tr>
@@ -802,6 +752,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <tr key={voter.email} className="hover:bg-white/5 transition-colors">
                       <td className="py-3 px-4 font-medium text-slate-200">{voter.name}</td>
                       <td className="py-3 px-4 text-astro-cyan font-mono">{voter.email}</td>
+                      <td className="py-3 px-4">
+                        {voter.is_verified ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] font-mono">
+                            ✓ Verifiziert
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[11px] font-mono">
+                            ⏳ Unbestätigt
+                          </span>
+                        )}
+                      </td>
                       <td className="py-3 px-4">
                         <span className="px-2.5 py-1 rounded-full bg-space-800 border border-white/10 font-mono text-slate-300">
                           {voter.votesCount} Fotos
@@ -957,26 +918,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   onChange={(e) => setEditingPhoto({ ...editingPhoto, author: e.target.value })}
                   className="w-full px-3 py-2 rounded-xl bg-space-850 border border-white/10 text-white text-sm"
                   required
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-mono text-slate-300 mb-1">Teleskop / Optik</label>
-                <input
-                  type="text"
-                  value={editingPhoto.telescope || ''}
-                  onChange={(e) => setEditingPhoto({ ...editingPhoto, telescope: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl bg-space-850 border border-white/10 text-white text-sm"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-mono text-slate-300 mb-1">Belichtung</label>
-                <input
-                  type="text"
-                  value={editingPhoto.exposure || ''}
-                  onChange={(e) => setEditingPhoto({ ...editingPhoto, exposure: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl bg-space-850 border border-white/10 text-white text-sm"
                 />
               </div>
 

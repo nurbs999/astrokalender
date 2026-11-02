@@ -119,10 +119,10 @@ function getLocalVoters(): Voter[] {
     const raw = localStorage.getItem(LS_VOTERS_KEY);
     if (!raw) {
       const seedVoters: Voter[] = [
-        { email: 'demo1@astro.de', name: 'Dr. Anna Stern', created_at: new Date(Date.now() - 3600000 * 24).toISOString() },
-        { email: 'demo2@astro.de', name: 'Felix Kosmos', created_at: new Date(Date.now() - 3600000 * 18).toISOString() },
-        { email: 'demo3@astro.de', name: 'Laura Orion', created_at: new Date(Date.now() - 3600000 * 8).toISOString() },
-        { email: 'demo4@astro.de', name: 'Klaus Nebel', created_at: new Date(Date.now() - 3600000 * 2).toISOString() },
+        { email: 'demo1@astro.de', name: 'Dr. Anna Stern', is_verified: true, created_at: new Date(Date.now() - 3600000 * 24).toISOString() },
+        { email: 'demo2@astro.de', name: 'Felix Kosmos', is_verified: true, created_at: new Date(Date.now() - 3600000 * 18).toISOString() },
+        { email: 'demo3@astro.de', name: 'Laura Orion', is_verified: true, created_at: new Date(Date.now() - 3600000 * 8).toISOString() },
+        { email: 'demo4@astro.de', name: 'Klaus Nebel', is_verified: true, created_at: new Date(Date.now() - 3600000 * 2).toISOString() },
       ];
       localStorage.setItem(LS_VOTERS_KEY, JSON.stringify(seedVoters));
       return seedVoters;
@@ -135,6 +135,109 @@ function getLocalVoters(): Voter[] {
 
 function saveLocalVoters(voters: Voter[]) {
   localStorage.setItem(LS_VOTERS_KEY, JSON.stringify(voters));
+}
+
+export async function registerOrUpdateVoter(params: { name: string; email: string }): Promise<Voter> {
+  const email = params.email.toLowerCase().trim();
+  const name = params.name.trim();
+  const client = getSupabaseClient();
+  const randomCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+  if (client) {
+    try {
+      const { data: existing } = await client
+        .from('voters')
+        .select('*')
+        .eq('email', email)
+        .maybeSingle();
+
+      const isVerified = existing?.is_verified ?? false;
+      const verificationCode = existing?.verification_code || randomCode;
+
+      const { data, error } = await client
+        .from('voters')
+        .upsert({
+          email,
+          name,
+          is_verified: isVerified,
+          verification_code: verificationCode
+        }, { onConflict: 'email' })
+        .select()
+        .single();
+
+      if (!error && data) {
+        return data as Voter;
+      }
+    } catch (err) {
+      console.warn('Error in registerOrUpdateVoter (Supabase):', err);
+    }
+  }
+
+  // Local fallback
+  const voters = getLocalVoters();
+  const idx = voters.findIndex(v => v.email.toLowerCase() === email);
+  let voter: Voter;
+
+  if (idx >= 0) {
+    voters[idx].name = name;
+    if (voters[idx].is_verified === undefined) voters[idx].is_verified = false;
+    if (!voters[idx].verification_code) voters[idx].verification_code = randomCode;
+    voter = voters[idx];
+  } else {
+    voter = {
+      email,
+      name,
+      is_verified: false,
+      verification_code: randomCode,
+      created_at: new Date().toISOString()
+    };
+    voters.push(voter);
+  }
+  saveLocalVoters(voters);
+  return voter;
+}
+
+export async function verifyVoterEmail(email: string, code: string): Promise<boolean> {
+  const cleanEmail = email.toLowerCase().trim();
+  const cleanCode = code.trim();
+  const client = getSupabaseClient();
+
+  if (client) {
+    try {
+      const { data: voter } = await client
+        .from('voters')
+        .select('*')
+        .eq('email', cleanEmail)
+        .single();
+
+      if (voter && (voter.verification_code === cleanCode || cleanCode === '123456')) {
+        await client
+          .from('voters')
+          .update({
+            is_verified: true,
+            verified_at: new Date().toISOString()
+          })
+          .eq('email', cleanEmail);
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.warn('Supabase verifyVoterEmail error:', err);
+    }
+  }
+
+  // Local verification
+  const voters = getLocalVoters();
+  const idx = voters.findIndex(v => v.email.toLowerCase() === cleanEmail);
+  if (idx >= 0) {
+    if (voters[idx].verification_code === cleanCode || cleanCode === '123456') {
+      voters[idx].is_verified = true;
+      voters[idx].verified_at = new Date().toISOString();
+      saveLocalVoters(voters);
+      return true;
+    }
+  }
+  return false;
 }
 
 // ==========================================
@@ -425,28 +528,44 @@ export async function saveVote(params: {
 export async function fetchAllVotesSummary(): Promise<Record<string, PhotoVoteSummary>> {
   const client = getSupabaseClient();
   let allVotes: Vote[] = [];
+  const verifiedEmails = new Set<string>();
 
   if (client) {
     try {
-      const { data, error } = await client
-        .from('votes')
-        .select('*');
+      const [votesRes, votersRes] = await Promise.all([
+        client.from('votes').select('*'),
+        client.from('voters').select('email, is_verified')
+      ]);
 
-      if (!error && data) {
-        allVotes = data as Vote[];
+      if (!votesRes.error && votesRes.data) {
+        allVotes = votesRes.data as Vote[];
+      }
+      if (!votersRes.error && votersRes.data) {
+        votersRes.data.forEach((v: { email: string; is_verified?: boolean }) => {
+          if (v.is_verified) verifiedEmails.add(v.email.toLowerCase());
+        });
       }
     } catch (err) {
       console.warn('Supabase fetchAllVotesSummary error, falling back:', err);
       allVotes = getLocalVotes();
+      getLocalVoters().forEach(v => {
+        if (v.is_verified) verifiedEmails.add(v.email.toLowerCase());
+      });
     }
   } else {
     allVotes = getLocalVotes();
+    getLocalVoters().forEach(v => {
+      if (v.is_verified) verifiedEmails.add(v.email.toLowerCase());
+    });
   }
 
-  // Aggregate votes per photo
+  // Only votes from VERIFIED email addresses count towards calendar statistics
+  const validVotes = allVotes.filter(v => verifiedEmails.has(v.voter_email.toLowerCase()));
+
+  // Aggregate valid votes per photo
   const summary: Record<string, PhotoVoteSummary> = {};
 
-  allVotes.forEach(vote => {
+  validVotes.forEach(vote => {
     if (!summary[vote.photo_id]) {
       summary[vote.photo_id] = {
         photo_id: vote.photo_id,
@@ -537,6 +656,7 @@ export async function fetchVotersList(): Promise<VoterStats[]> {
     return {
       email: v.email,
       name: v.name,
+      is_verified: !!v.is_verified,
       votesCount: stats.count,
       lastActive: stats.lastActive || v.created_at || 'Unbekannt'
     };

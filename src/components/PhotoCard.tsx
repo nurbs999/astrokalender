@@ -6,6 +6,7 @@ interface PhotoCardProps {
   photo: Photo;
   userVote?: Vote;
   summary?: PhotoVoteSummary;
+  isVoterVerified?: boolean;
   onVote: (photoId: string, rating: Rating, month: number | null) => void;
   onOpenLightbox: (photo: Photo) => void;
   index: number;
@@ -15,6 +16,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   photo,
   userVote,
   summary,
+  isVoterVerified,
   onVote,
   onOpenLightbox,
   index
@@ -41,9 +43,10 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
 
       {/* Voted badge indicator */}
       {hasVoted && (
-        <div className="absolute top-3 left-3 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/90 text-white text-[11px] font-medium backdrop-blur-md shadow-lg shadow-black/40">
+        <div className={`absolute top-3 left-3 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-white text-[11px] font-medium backdrop-blur-md shadow-lg shadow-black/40 ${isVoterVerified ? 'bg-emerald-500/90' : 'bg-amber-500/90'
+          }`}>
           <CheckCircle className="w-3.5 h-3.5" />
-          <span>Bewertet</span>
+          <span>{isVoterVerified ? 'Gezählt (Verifiziert)' : 'Vorgemerkt (Unbestätigt)'}</span>
         </div>
       )}
 
@@ -134,8 +137,8 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
               type="button"
               onClick={() => handleRatingClick('up')}
               className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl font-medium text-xs sm:text-sm transition-all border ${currentRating === 'up'
-                  ? 'bg-emerald-500 text-space-950 border-emerald-400 font-semibold shadow-glow-lime'
-                  : 'bg-space-800/80 hover:bg-space-800 text-slate-200 border-white/10 hover:border-emerald-500/40 hover:text-emerald-400'
+                ? 'bg-emerald-500 text-space-950 border-emerald-400 font-semibold shadow-glow-lime'
+                : 'bg-space-800/80 hover:bg-space-800 text-slate-200 border-white/10 hover:border-emerald-500/40 hover:text-emerald-400'
                 }`}
             >
               <ThumbsUp className={`w-4 h-4 ${currentRating === 'up' ? 'fill-current' : ''}`} />
@@ -152,8 +155,8 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
               type="button"
               onClick={() => handleRatingClick('down')}
               className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl font-medium text-xs sm:text-sm transition-all border ${currentRating === 'down'
-                  ? 'bg-rose-500 text-white border-rose-400 font-semibold shadow-lg shadow-rose-900/30'
-                  : 'bg-space-800/80 hover:bg-space-800 text-slate-300 border-white/10 hover:border-rose-500/40 hover:text-rose-400'
+                ? 'bg-rose-500 text-white border-rose-400 font-semibold shadow-lg shadow-rose-900/30'
+                : 'bg-space-800/80 hover:bg-space-800 text-slate-300 border-white/10 hover:border-rose-500/40 hover:text-rose-400'
                 }`}
             >
               <ThumbsDown className={`w-4 h-4 ${currentRating === 'down' ? 'fill-current' : ''}`} />

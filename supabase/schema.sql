@@ -19,13 +19,21 @@ CREATE TABLE IF NOT EXISTS public.photos (
     created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- Tabelle: Wähler (Voters)
+-- Tabelle: Wähler (Voters) mit E-Mail-Verifizierung
 CREATE TABLE IF NOT EXISTS public.voters (
     id UUID DEFAULT gen_random_uuid(),
     email TEXT PRIMARY KEY,
     name TEXT NOT NULL,
+    is_verified BOOLEAN DEFAULT false NOT NULL,
+    verification_code TEXT,
+    verified_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- Falls Tabelle voters bereits existiert, Spalten nachrüsten:
+ALTER TABLE public.voters ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT false;
+ALTER TABLE public.voters ADD COLUMN IF NOT EXISTS verification_code TEXT;
+ALTER TABLE public.voters ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;
 
 -- Tabelle: Stimmen (Votes)
 CREATE TABLE IF NOT EXISTS public.votes (
@@ -43,7 +51,7 @@ CREATE INDEX IF NOT EXISTS idx_votes_photo_id ON public.votes(photo_id);
 CREATE INDEX IF NOT EXISTS idx_votes_voter_email ON public.votes(voter_email);
 
 -- ------------------------------------------------------------------------------
--- 2. Hilfs-View für aggregierte Auswertungen (Admin & Gallery)
+-- 2. Hilfs-View für aggregierte Auswertungen (NUR VERIFIZIERTE WÄHLER ZÄHLEN)
 -- ------------------------------------------------------------------------------
 CREATE OR REPLACE VIEW public.photo_voting_summary AS
 SELECT 
@@ -52,14 +60,16 @@ SELECT
     p.author,
     p.image_url,
     p.created_at,
-    COUNT(CASE WHEN v.rating = 'up' THEN 1 END) AS upvotes,
-    COUNT(CASE WHEN v.rating = 'down' THEN 1 END) AS downvotes,
-    (COUNT(CASE WHEN v.rating = 'up' THEN 1 END) - COUNT(CASE WHEN v.rating = 'down' THEN 1 END)) AS net_votes,
-    COUNT(v.id) AS total_votes
+    COUNT(CASE WHEN v.rating = 'up' AND vt.is_verified = true THEN 1 END) AS upvotes,
+    COUNT(CASE WHEN v.rating = 'down' AND vt.is_verified = true THEN 1 END) AS downvotes,
+    (COUNT(CASE WHEN v.rating = 'up' AND vt.is_verified = true THEN 1 END) - COUNT(CASE WHEN v.rating = 'down' AND vt.is_verified = true THEN 1 END)) AS net_votes,
+    COUNT(CASE WHEN vt.is_verified = true THEN v.id END) AS total_votes
 FROM 
     public.photos p
 LEFT JOIN 
     public.votes v ON p.id = v.photo_id
+LEFT JOIN
+    public.voters vt ON v.voter_email = vt.email
 GROUP BY 
     p.id, p.title, p.author, p.image_url, p.created_at;
 
@@ -145,4 +155,3 @@ CREATE POLICY "Löschen von Fotos erlauben"
     ON storage.objects FOR DELETE
     TO anon, authenticated
     USING (bucket_id = 'photos');
-

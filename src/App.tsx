@@ -2,17 +2,18 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import confetti from 'canvas-confetti';
 import {
   Sparkles, Filter, CheckCircle2, Circle, ArrowUpDown,
-  RefreshCw, CalendarDays, Rocket
+  RefreshCw, CalendarDays, Rocket, AlertCircle, MailCheck
 } from 'lucide-react';
 import { Photo, Voter, Vote, Rating, PhotoVoteSummary } from './types';
 import {
   fetchPhotos, fetchUserVotes, saveVote, fetchAllVotesSummary,
-  isUsingLiveSupabase
+  isUsingLiveSupabase, registerOrUpdateVoter
 } from './lib/api';
 import { Navbar } from './components/Navbar';
 import { PhotoCard } from './components/PhotoCard';
 import { Lightbox } from './components/Lightbox';
 import { VoterModal } from './components/VoterModal';
+import { EmailVerificationModal } from './components/EmailVerificationModal';
 import { AdminDashboard } from './components/AdminDashboard';
 import { SupabaseConfigModal } from './components/SupabaseConfigModal';
 import { ToastContainer, ToastMessage } from './components/Toast';
@@ -43,6 +44,7 @@ export function App() {
 
   // Modals & UI States
   const [isVoterModalOpen, setIsVoterModalOpen] = useState(false);
+  const [isVerificationModalOpen, setIsVerificationModalOpen] = useState(false);
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
   const [activeLightboxPhoto, setActiveLightboxPhoto] = useState<Photo | null>(null);
   const [pendingVote, setPendingVote] = useState<{ photoId: string; rating: Rating; month: number | null } | null>(null);
@@ -196,21 +198,43 @@ export function App() {
   };
 
   // Save new Voter from Modal
-  const handleSaveVoter = async (voter: Voter) => {
-    setCurrentVoter(voter);
-    localStorage.setItem(LS_CURRENT_VOTER, JSON.stringify(voter));
-    addToast(`Willkommen, ${voter.name}!`);
+  const handleSaveVoter = async (voterInput: Voter) => {
+    try {
+      const registeredVoter = await registerOrUpdateVoter({
+        name: voterInput.name,
+        email: voterInput.email
+      });
 
-    // Fetch previous votes for this email
-    const previousVotes = await fetchUserVotes(voter.email);
-    setUserVotes(previousVotes);
+      setCurrentVoter(registeredVoter);
+      localStorage.setItem(LS_CURRENT_VOTER, JSON.stringify(registeredVoter));
+      addToast(`Willkommen, ${registeredVoter.name}!`);
 
-    // If there was a pending vote click, execute it now!
-    if (pendingVote) {
-      const { photoId, rating, month } = pendingVote;
-      setPendingVote(null);
-      handleVote(photoId, rating, month);
+      // Fetch previous votes for this email
+      const previousVotes = await fetchUserVotes(registeredVoter.email);
+      setUserVotes(previousVotes);
+
+      // If not verified, trigger verification modal
+      if (!registeredVoter.is_verified) {
+        setIsVerificationModalOpen(true);
+      }
+
+      // If there was a pending vote click, execute it now!
+      if (pendingVote) {
+        const { photoId, rating, month } = pendingVote;
+        setPendingVote(null);
+        handleVote(photoId, rating, month);
+      }
+    } catch (err) {
+      console.error('Error saving voter:', err);
     }
+  };
+
+  const handleEmailVerified = async (verifiedVoter: Voter) => {
+    setCurrentVoter(verifiedVoter);
+    localStorage.setItem(LS_CURRENT_VOTER, JSON.stringify(verifiedVoter));
+    addToast('🎉 E-Mail erfolgreich bestätigt! Deine Stimmen sind jetzt gültig.', 'success');
+    const updatedSummaries = await fetchAllVotesSummary();
+    setSummaries(updatedSummaries);
   };
 
   // Lightbox navigation
@@ -274,6 +298,7 @@ export function App() {
         isSupabaseLive={isUsingLiveSupabase()}
         onOpenVoterModal={() => setIsVoterModalOpen(true)}
         onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
+        onOpenVerificationModal={() => setIsVerificationModalOpen(true)}
       />
 
       {/* Main Content Area */}
@@ -330,6 +355,26 @@ export function App() {
                   {photos.length > 0 ? Math.round((votedCount / photos.length) * 100) : 0}%
                 </div>
               </div>
+
+              {/* Unverified Email Warning Banner */}
+              {currentVoter && !currentVoter.is_verified && (
+                <div className="mt-4 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/40 text-amber-200 backdrop-blur-md max-w-xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg shadow-amber-950/20">
+                  <div className="flex items-center gap-2.5 text-left">
+                    <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
+                    <div className="text-xs">
+                      <strong className="text-white block">E-Mail-Bestätigung erforderlich:</strong>
+                      Deine Stimmen werden erst gezählt, wenn du deine E-Mail ({currentVoter.email}) bestätigst.
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setIsVerificationModalOpen(true)}
+                    className="w-full sm:w-auto px-4 py-2 rounded-xl bg-amber-400 text-space-950 font-bold text-xs hover:bg-amber-300 transition-colors shrink-0 flex items-center justify-center gap-1.5 shadow-sm"
+                  >
+                    <MailCheck className="w-3.5 h-3.5" />
+                    <span>Jetzt bestätigen</span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Filter and Control Bar */}
@@ -434,6 +479,7 @@ export function App() {
                     photo={photo}
                     userVote={userVotes[photo.id]}
                     summary={summaries[photo.id]}
+                    isVoterVerified={currentVoter?.is_verified ?? false}
                     onVote={handleVote}
                     onOpenLightbox={(p) => setActiveLightboxPhoto(p)}
                     index={index}
@@ -497,6 +543,14 @@ export function App() {
           setIsVoterModalOpen(false);
           setPendingVote(null);
         }}
+      />
+
+      {/* Email Verification Modal */}
+      <EmailVerificationModal
+        isOpen={isVerificationModalOpen}
+        voter={currentVoter}
+        onVerified={handleEmailVerified}
+        onClose={() => setIsVerificationModalOpen(false)}
       />
 
       {/* Supabase Configuration Modal */}

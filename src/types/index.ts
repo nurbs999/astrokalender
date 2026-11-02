@@ -15,6 +15,9 @@ export interface Voter {
   id?: string;
   email: string;
   name: string;
+  is_verified?: boolean;
+  verification_code?: string;
+  verified_at?: string;
   created_at?: string;
 }
 
@@ -44,6 +47,7 @@ export interface PhotoVoteSummary {
 export interface VoterStats {
   email: string;
   name: string;
+  is_verified: boolean;
   votesCount: number;
   lastActive: string;
 }
@@ -57,4 +61,3 @@ export const MONTH_SHORT_NAMES = [
   'Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun',
   'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'
 ];
-
