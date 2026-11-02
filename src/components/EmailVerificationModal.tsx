@@ -138,22 +138,11 @@ export const EmailVerificationModal: React.FC<EmailVerificationModalProps> = ({
               {isResending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
               <span>E-Mail erneut senden</span>
             </button>
-
-            <button
-              type="button"
-              onClick={handleUseDemoCode}
-              className="text-slate-400 hover:text-white font-mono flex items-center gap-1"
-              title="Test-Code einfügen"
-            >
-              <KeyRound className="w-3 h-3" />
-              <span>Test-Code: {voter.verification_code || '123456'}</span>
-            </button>
           </div>
 
           {resendMsg && (
-            <div className={`mt-2.5 p-2 rounded-lg text-[11px] font-mono ${
-              resendMsg.isError ? 'bg-amber-500/10 text-amber-300 border border-amber-500/30' : 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30'
-            }`}>
+            <div className={`mt-2.5 p-2 rounded-lg text-[11px] font-mono ${resendMsg.isError ? 'bg-amber-500/10 text-amber-300 border border-amber-500/30' : 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30'
+              }`}>
               {resendMsg.text}
             </div>
           )}
@@ -162,15 +151,15 @@ export const EmailVerificationModal: React.FC<EmailVerificationModalProps> = ({
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-mono text-slate-300 mb-1.5">
-              6-stelliger Bestätigungscode:
+              8-stelliger Bestätigungscode:
             </label>
             <input
               type="text"
               required
-              maxLength={6}
+              maxLength={8}
               value={code}
               onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-              placeholder="z. B. 123456"
+              placeholder="z. B. 12345678"
               className="w-full text-center tracking-[0.5em] font-mono text-xl py-3 px-4 rounded-xl bg-space-850 border border-white/10 text-white placeholder-slate-600 focus:outline-none focus:border-astro-cyan focus:ring-1 focus:ring-astro-cyan transition-colors"
               autoFocus
             />
