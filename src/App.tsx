@@ -7,7 +7,7 @@ import {
 import { Photo, Voter, Vote, Rating, PhotoVoteSummary } from './types';
 import {
   fetchPhotos, fetchUserVotes, saveVote, fetchAllVotesSummary,
-  isUsingLiveSupabase, registerOrUpdateVoter, getSupabaseClient
+  isUsingLiveSupabase, registerOrUpdateVoter, getSupabaseClient, fetchVoter
 } from './lib/api';
 import { Navbar } from './components/Navbar';
 import { PhotoCard } from './components/PhotoCard';
@@ -127,13 +127,47 @@ export function App() {
     loadUserVotes(currentVoter);
   }, [currentVoter, loadUserVotes]);
 
+  // Sync voter verification status with Supabase on mount / when currentVoter changes
+  useEffect(() => {
+    if (!currentVoter?.email) return;
+
+    let isMounted = true;
+    fetchVoter(currentVoter.email).then(dbVoter => {
+      if (!isMounted || !dbVoter) return;
+      if (dbVoter.is_verified !== currentVoter.is_verified) {
+        const updated: Voter = {
+          ...currentVoter,
+          is_verified: dbVoter.is_verified,
+          verified_at: dbVoter.verified_at
+        };
+        setCurrentVoter(updated);
+        localStorage.setItem(LS_CURRENT_VOTER, JSON.stringify(updated));
+      }
+    }).catch(err => console.warn('Could not sync voter status:', err));
+
+    return () => {
+      isMounted = false;
+    };
+  }, [currentVoter?.email]);
+
   // Listen for Supabase Magic Link click / Auth state changes
   useEffect(() => {
     const client = getSupabaseClient();
     if (!client) return;
 
-    const { data: { subscription } } = client.auth.onAuthStateChange(async (_event, session) => {
-      if (session?.user?.email) {
+    const { data: { subscription } } = client.auth.onAuthStateChange(async (event, session) => {
+      const isMagicLinkRedirect = window.location.hash.includes('access_token') ||
+        window.location.search.includes('code=') ||
+        window.location.hash.includes('type=magiclink') ||
+        window.location.hash.includes('type=signup');
+
+      // Only auto-verify if arrived via a magic link / OTP redirect or fresh explicit sign in
+      if (session?.user?.email && (isMagicLinkRedirect || event === 'SIGNED_IN')) {
+        // If it was just INITIAL_SESSION without a magic link token in the URL, do NOT overwrite the database!
+        if (event === 'INITIAL_SESSION' && !isMagicLinkRedirect) {
+          return;
+        }
+
         const userEmail = session.user.email.toLowerCase().trim();
 
         try {
@@ -163,7 +197,7 @@ export function App() {
         addToast('🎉 E-Mail erfolgreich über Bestätigungslink verifiziert!', 'success');
 
         // Clean auth tokens from URL if present
-        if (window.location.hash.includes('access_token')) {
+        if (window.location.hash.includes('access_token') || window.location.hash.includes('type=')) {
           window.history.replaceState(null, '', window.location.pathname);
         }
 
@@ -183,6 +217,14 @@ export function App() {
       // Prompt voter for identity first
       setPendingVote({ photoId, rating, month });
       setIsVoterModalOpen(true);
+      return;
+    }
+
+    if (!currentVoter.is_verified) {
+      // Require email verification before voting
+      setPendingVote({ photoId, rating, month });
+      setIsVerificationModalOpen(true);
+      addToast('Bitte bestätige zuerst deine E-Mail-Adresse, um abzustimmen.', 'info');
       return;
     }
 
@@ -264,10 +306,7 @@ export function App() {
       // If not verified, trigger verification modal
       if (!registeredVoter.is_verified) {
         setIsVerificationModalOpen(true);
-      }
-
-      // If there was a pending vote click, execute it now!
-      if (pendingVote) {
+      } else if (pendingVote) {
         const { photoId, rating, month } = pendingVote;
         setPendingVote(null);
         handleVote(photoId, rating, month);
@@ -283,6 +322,12 @@ export function App() {
     addToast('🎉 E-Mail erfolgreich bestätigt! Deine Stimmen sind jetzt gültig.', 'success');
     const updatedSummaries = await fetchAllVotesSummary();
     setSummaries(updatedSummaries);
+
+    if (pendingVote) {
+      const { photoId, rating, month } = pendingVote;
+      setPendingVote(null);
+      handleVote(photoId, rating, month);
+    }
   };
 
   const handleLogout = async () => {
@@ -296,6 +341,7 @@ export function App() {
     }
     setCurrentVoter(null);
     setUserVotes({});
+    setPendingVote(null);
     localStorage.removeItem(LS_CURRENT_VOTER);
     setIsVoterModalOpen(false);
     setIsVerificationModalOpen(false);

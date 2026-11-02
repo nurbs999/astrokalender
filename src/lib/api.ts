@@ -232,6 +232,40 @@ export async function registerOrUpdateVoter(params: { name: string; email: strin
   return voter;
 }
 
+export async function fetchVoter(email: string): Promise<Voter | null> {
+  if (!email) return null;
+  const cleanEmail = email.toLowerCase().trim();
+  const client = getSupabaseClient();
+
+  if (client) {
+    try {
+      const { data, error } = await client
+        .from('voters')
+        .select('*')
+        .eq('email', cleanEmail)
+        .maybeSingle();
+
+      if (!error && data) {
+        return {
+          email: data.email,
+          name: data.name,
+          is_verified: !!data.is_verified,
+          verification_code: data.verification_code,
+          verified_at: data.verified_at,
+          created_at: data.created_at
+        };
+      }
+    } catch (err) {
+      console.warn('Error fetching voter from Supabase:', err);
+    }
+  }
+
+  // Fallback local
+  const voters = getLocalVoters();
+  const found = voters.find(v => v.email.toLowerCase() === cleanEmail);
+  return found || null;
+}
+
 export async function verifyVoterEmail(email: string, code: string): Promise<boolean> {
   const cleanEmail = email.toLowerCase().trim();
   const cleanCode = code.trim();
