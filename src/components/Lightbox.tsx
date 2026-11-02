@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { X, ChevronLeft, ChevronRight, ThumbsUp, ThumbsDown, Calendar, Camera, Clock, User } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, ThumbsUp, Calendar, Camera, Clock, User } from 'lucide-react';
 import { Photo, Vote, Rating, MONTH_NAMES } from '../types';
 
 interface LightboxProps {
@@ -139,24 +139,12 @@ export const Lightbox: React.FC<LightboxProps> = ({
                 type="button"
                 onClick={() => handleRating('up')}
                 className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs sm:text-sm font-medium border transition-all ${currentRating === 'up'
-                    ? 'bg-emerald-500 text-space-950 border-emerald-400 font-semibold shadow-glow-lime'
+                    ? 'bg-gradient-to-r from-emerald-400 to-astro-lime text-space-950 border-emerald-300 font-bold shadow-glow-lime'
                     : 'bg-space-850 hover:bg-space-800 text-slate-200 border-white/10 hover:text-emerald-400'
                   }`}
               >
                 <ThumbsUp className={`w-4 h-4 ${currentRating === 'up' ? 'fill-current' : ''}`} />
-                <span>Gefällt mir</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleRating('down')}
-                className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs sm:text-sm font-medium border transition-all ${currentRating === 'down'
-                    ? 'bg-rose-500 text-white border-rose-400 font-semibold shadow-lg shadow-rose-900/40'
-                    : 'bg-space-850 hover:bg-space-800 text-slate-200 border-white/10 hover:text-rose-400'
-                  }`}
-              >
-                <ThumbsDown className={`w-4 h-4 ${currentRating === 'down' ? 'fill-current' : ''}`} />
-                <span>Weniger</span>
+                <span>{currentRating === 'up' ? 'Gestimmt (Gefällt mir)' : 'Gefällt mir'}</span>
               </button>
             </div>
 

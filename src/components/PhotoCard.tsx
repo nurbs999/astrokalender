@@ -1,5 +1,5 @@
 import React from 'react';
-import { ThumbsUp, ThumbsDown, Calendar, Maximize2, Camera, Clock, CheckCircle } from 'lucide-react';
+import { ThumbsUp, Calendar, Maximize2, Camera, Clock, CheckCircle } from 'lucide-react';
 import { Photo, Vote, PhotoVoteSummary, Rating, MONTH_NAMES } from '../types';
 
 interface PhotoCardProps {
@@ -78,13 +78,12 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
           </span>
         </div>
 
-        {/* Community Net Votes Pill on Image */}
-        {summary && summary.totalVotes > 0 && (
+        {/* Community Upvotes Pill on Image */}
+        {summary && summary.upvotes > 0 && (
           <div className="absolute bottom-3 right-3 z-10 px-2.5 py-1 rounded-lg bg-space-950/85 border border-white/10 text-xs font-mono backdrop-blur-md flex items-center gap-1.5 shadow-md">
-            <span className={summary.netVotes > 0 ? 'text-emerald-400 font-bold' : summary.netVotes < 0 ? 'text-rose-400' : 'text-slate-400'}>
-              {summary.netVotes > 0 ? `+${summary.netVotes}` : summary.netVotes}
-            </span>
-            <span className="text-[10px] text-slate-400">Netto-Votes</span>
+            <ThumbsUp className="w-3 h-3 text-emerald-400 fill-emerald-400" />
+            <span className="text-emerald-400 font-bold">{summary.upvotes}</span>
+            <span className="text-[10px] text-slate-400">{summary.upvotes === 1 ? 'Stimme' : 'Stimmen'}</span>
           </div>
         )}
       </div>
@@ -129,45 +128,23 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
         {/* Voting & Month Recommendation Controls */}
         <div className="pt-3 border-t border-white/10 flex flex-col gap-3">
 
-          {/* Thumbs Up / Down Buttons */}
-          <div className="grid grid-cols-2 gap-2">
-
-            {/* UPVOTE BUTTON */}
-            <button
-              type="button"
-              onClick={() => handleRatingClick('up')}
-              className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl font-medium text-xs sm:text-sm transition-all border ${currentRating === 'up'
-                ? 'bg-emerald-500 text-space-950 border-emerald-400 font-semibold shadow-glow-lime'
-                : 'bg-space-800/80 hover:bg-space-800 text-slate-200 border-white/10 hover:border-emerald-500/40 hover:text-emerald-400'
-                }`}
-            >
-              <ThumbsUp className={`w-4 h-4 ${currentRating === 'up' ? 'fill-current' : ''}`} />
-              <span>Gefällt mir</span>
-              {summary && summary.upvotes > 0 && (
-                <span className={`text-[11px] px-1.5 py-0.2 rounded-full ${currentRating === 'up' ? 'bg-space-950/30' : 'bg-white/10 text-slate-400'}`}>
-                  {summary.upvotes}
-                </span>
-              )}
-            </button>
-
-            {/* DOWNVOTE BUTTON */}
-            <button
-              type="button"
-              onClick={() => handleRatingClick('down')}
-              className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl font-medium text-xs sm:text-sm transition-all border ${currentRating === 'down'
-                ? 'bg-rose-500 text-white border-rose-400 font-semibold shadow-lg shadow-rose-900/30'
-                : 'bg-space-800/80 hover:bg-space-800 text-slate-300 border-white/10 hover:border-rose-500/40 hover:text-rose-400'
-                }`}
-            >
-              <ThumbsDown className={`w-4 h-4 ${currentRating === 'down' ? 'fill-current' : ''}`} />
-              <span>Weniger</span>
-              {summary && summary.downvotes > 0 && (
-                <span className={`text-[11px] px-1.5 py-0.2 rounded-full ${currentRating === 'down' ? 'bg-white/20' : 'bg-white/10 text-slate-400'}`}>
-                  {summary.downvotes}
-                </span>
-              )}
-            </button>
-          </div>
+          {/* UPVOTE BUTTON */}
+          <button
+            type="button"
+            onClick={() => handleRatingClick('up')}
+            className={`w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-medium text-xs sm:text-sm transition-all border ${currentRating === 'up'
+              ? 'bg-gradient-to-r from-emerald-400 to-astro-lime text-space-950 border-emerald-300 font-bold shadow-glow-lime'
+              : 'bg-space-800/80 hover:bg-space-800 text-slate-200 border-white/10 hover:border-emerald-500/40 hover:text-emerald-300'
+              }`}
+          >
+            <ThumbsUp className={`w-4 h-4 ${currentRating === 'up' ? 'fill-current' : ''}`} />
+            <span>{currentRating === 'up' ? 'Gefällt mir (Stimme abgegeben)' : 'Gefällt mir (Stimme abgeben)'}</span>
+            {summary && summary.upvotes > 0 && (
+              <span className={`text-xs px-2 py-0.5 rounded-full font-mono ${currentRating === 'up' ? 'bg-space-950/20 text-space-950 font-bold' : 'bg-white/10 text-slate-300'}`}>
+                {summary.upvotes}
+              </span>
+            )}
+          </button>
 
           {/* Month Recommendation Dropdown */}
           <div className="relative">

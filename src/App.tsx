@@ -165,13 +165,11 @@ export function App() {
       setSummaries(updatedSummaries);
 
       if (rating === 'up') {
-        addToast(`👍 Upvote für "${photoTitle}" gespeichert!`);
-      } else if (rating === 'down') {
-        addToast(`👎 Bewertung für "${photoTitle}" gespeichert.`);
+        addToast(`👍 Stimme für "${photoTitle}" gespeichert!`);
       } else if (month !== null) {
         addToast(`📅 Monat für "${photoTitle}" gespeichert.`);
       } else {
-        addToast(`Bewertung für "${photoTitle}" zurückgesetzt.`);
+        addToast(`Stimme für "${photoTitle}" zurückgenommen.`);
       }
 
       // Check if user has now voted on all photos!
@@ -272,9 +270,9 @@ export function App() {
     // Sort
     if (sortMode === 'top_rated') {
       result.sort((a, b) => {
-        const netA = summaries[a.id]?.netVotes ?? 0;
-        const netB = summaries[b.id]?.netVotes ?? 0;
-        return netB - netA;
+        const upA = summaries[a.id]?.upvotes ?? 0;
+        const upB = summaries[b.id]?.upvotes ?? 0;
+        return upB - upA;
       });
     } else if (sortMode === 'title') {
       result.sort((a, b) => a.title.localeCompare(b.title));
@@ -330,7 +328,7 @@ export function App() {
               </h1>
 
               <p className="mt-4 text-sm sm:text-base text-slate-300 leading-relaxed">
-                Bewerte jedes Foto mit <strong>Daumen hoch (👍)</strong> oder <strong>runter (👎)</strong> und schlage den passenden Kalendermonat vor. Deine Stimmen werden sicher gespeichert und fließen direkt in das Gesamtergebnis ein.
+                Stimme für jedes Foto mit <strong>Daumen hoch (👍)</strong> ab und schlage den passenden Kalendermonat vor. Deine Stimmen werden sicher gespeichert und fließen direkt in das Gesamtergebnis ein.
               </p>
 
               {/* Progress Bar Card */}
@@ -426,7 +424,7 @@ export function App() {
                   className="bg-space-850 hover:bg-space-800 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-astro-cyan transition-colors"
                 >
                   <option value="default">Standardreihenfolge</option>
-                  <option value="top_rated">Beliebteste (Netto-Votes 👍)</option>
+                  <option value="top_rated">Beliebteste (Meiste Stimmen 👍)</option>
                   <option value="title">Titel (A-Z)</option>
                 </select>
               </div>

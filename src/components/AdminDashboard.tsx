@@ -296,11 +296,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     );
   }
 
-  // Sorted photos by Net Votes (👍 - 👎)
+  // Sorted photos by Upvotes
   const rankedPhotos = [...photos].sort((a, b) => {
-    const netA = summaries[a.id]?.netVotes ?? 0;
-    const netB = summaries[b.id]?.netVotes ?? 0;
-    return netB - netA;
+    const upA = summaries[a.id]?.upvotes ?? 0;
+    const upB = summaries[b.id]?.upvotes ?? 0;
+    return upB - upA;
   });
 
   return (
@@ -435,7 +435,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <div className="bg-space-900/80 border border-white/10 rounded-2xl p-6">
             <h2 className="font-display font-semibold text-lg text-white mb-1 flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-astro-gold" />
-              Rangliste nach Netto-Upvotes (👍 minus 👎)
+              Rangliste nach Stimmen (👍 Gefällt mir)
             </h2>
             <p className="text-xs text-slate-400 mb-6">
               Die beliebtesten Astrofotos ganz oben, zusammen mit der Verteilung der empfohlenen Kalendermonate.
@@ -480,23 +480,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
                     </div>
 
-                    {/* Center: Vote Breakdown */}
+                    {/* Center: Vote Count */}
                     <div className="flex items-center gap-3 shrink-0">
-                      <div className="px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-center min-w-[70px]">
-                        <div className="text-xs font-mono">👍 Up</div>
-                        <div className="font-bold text-base">{s.upvotes}</div>
-                      </div>
-
-                      <div className="px-3 py-2 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-center min-w-[70px]">
-                        <div className="text-xs font-mono">👎 Down</div>
-                        <div className="font-bold text-base">{s.downvotes}</div>
-                      </div>
-
-                      <div className="px-3.5 py-2 rounded-xl bg-space-950 border border-white/10 text-center min-w-[85px]">
-                        <div className="text-xs font-mono text-slate-400">Netto</div>
-                        <div className={`font-bold text-base ${s.netVotes > 0 ? 'text-astro-cyan' : s.netVotes < 0 ? 'text-rose-400' : 'text-slate-400'}`}>
-                          {s.netVotes > 0 ? `+${s.netVotes}` : s.netVotes}
-                        </div>
+                      <div className="px-4 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-center min-w-[90px]">
+                        <div className="text-xs font-mono">👍 Stimmen</div>
+                        <div className="font-bold text-lg">{s.upvotes}</div>
                       </div>
                     </div>
 
