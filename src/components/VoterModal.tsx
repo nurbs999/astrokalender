@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Mail, Sparkles, X, Check } from 'lucide-react';
+import { User, Mail, Sparkles, X, Check, LogOut } from 'lucide-react';
 import { Voter } from '../types';
 
 interface VoterModalProps {
@@ -7,6 +7,7 @@ interface VoterModalProps {
   currentVoter: Voter | null;
   onSave: (voter: Voter) => void;
   onClose: () => void;
+  onLogout?: () => void;
 }
 
 export const VoterModal: React.FC<VoterModalProps> = ({
@@ -14,6 +15,7 @@ export const VoterModal: React.FC<VoterModalProps> = ({
   currentVoter,
   onSave,
   onClose,
+  onLogout,
 }) => {
   const [name, setName] = useState(currentVoter?.name || '');
   const [email, setEmail] = useState(currentVoter?.email || '');
@@ -151,6 +153,19 @@ export const VoterModal: React.FC<VoterModalProps> = ({
               <span>Speichern & Abstimmen</span>
             </button>
           </div>
+
+          {currentVoter && onLogout && (
+            <div className="pt-2 text-center border-t border-white/5 mt-2">
+              <button
+                type="button"
+                onClick={onLogout}
+                className="text-xs text-rose-400 hover:text-rose-300 font-mono hover:underline inline-flex items-center gap-1.5"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Als {currentVoter.name} abmelden</span>
+              </button>
+            </div>
+          )}
         </form>
 
       </div>

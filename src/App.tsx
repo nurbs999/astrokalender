@@ -285,6 +285,23 @@ export function App() {
     setSummaries(updatedSummaries);
   };
 
+  const handleLogout = async () => {
+    const client = getSupabaseClient();
+    if (client) {
+      try {
+        await client.auth.signOut();
+      } catch (e) {
+        console.warn('Supabase signOut warning:', e);
+      }
+    }
+    setCurrentVoter(null);
+    setUserVotes({});
+    localStorage.removeItem(LS_CURRENT_VOTER);
+    setIsVoterModalOpen(false);
+    setIsVerificationModalOpen(false);
+    addToast('Erfolgreich abgemeldet.');
+  };
+
   // Lightbox navigation
   const handleLightboxNavigate = (direction: 'prev' | 'next') => {
     if (!activeLightboxPhoto) return;
@@ -347,6 +364,7 @@ export function App() {
         onOpenVoterModal={() => setIsVoterModalOpen(true)}
         onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
         onOpenVerificationModal={() => setIsVerificationModalOpen(true)}
+        onLogout={handleLogout}
       />
 
       {/* Main Content Area */}
@@ -581,6 +599,7 @@ export function App() {
         isOpen={isVoterModalOpen}
         currentVoter={currentVoter}
         onSave={handleSaveVoter}
+        onLogout={handleLogout}
         onClose={() => {
           setIsVoterModalOpen(false);
           setPendingVote(null);

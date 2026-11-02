@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, User, Database, Award, AlertCircle, ArrowRight } from 'lucide-react';
+import { Sparkles, User, Database, Award, AlertCircle, ArrowRight, LogOut } from 'lucide-react';
 import { Voter } from '../types';
 
 interface NavbarProps {
@@ -10,6 +10,7 @@ interface NavbarProps {
   onOpenVoterModal: () => void;
   onOpenSupabaseModal: () => void;
   onOpenVerificationModal: () => void;
+  onLogout: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -20,6 +21,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenVoterModal,
   onOpenSupabaseModal,
   onOpenVerificationModal,
+  onLogout,
 }) => {
   const percentVoted = totalPhotos > 0 ? Math.round((votedCount / totalPhotos) * 100) : 0;
 
@@ -132,6 +134,19 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </div>
               </div>
             </button>
+
+            {/* Logout Button */}
+            {currentVoter && (
+              <button
+                onClick={onLogout}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-space-850 hover:bg-rose-500/15 border border-white/10 hover:border-rose-500/30 text-slate-400 hover:text-rose-300 text-xs font-mono transition-colors"
+                title="Als Wähler abmelden"
+                aria-label="Abmelden"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span className="hidden md:inline">Abmelden</span>
+              </button>
+            )}
           </div>
         </div>
 
