@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import {
   Upload, BarChart3, Users, Image as ImageIcon, Trash2, Edit2, Check,
-  Lock, ArrowLeft, AlertCircle, FileCheck, RefreshCw, Sparkles
+  Lock, ArrowLeft, AlertCircle, FileCheck, RefreshCw, Sparkles, Key, DownloadCloud, X
 } from 'lucide-react';
 import { Photo, PhotoVoteSummary, VoterStats, MONTH_NAMES } from '../types';
 import { compressImage, CompressionResult } from '../lib/imageCompressor';
-import { uploadPhoto, updatePhoto, deletePhoto, fetchAllVotesSummary, fetchVotersList } from '../lib/api';
+import {
+  uploadPhoto, updatePhoto, deletePhoto, fetchAllVotesSummary,
+  fetchVotersList, seedDemoPhotosToSupabase, isUsingLiveSupabase
+} from '../lib/api';
 
 interface AdminDashboardProps {
   photos: Photo[];
@@ -13,7 +16,13 @@ interface AdminDashboardProps {
   onExit: () => void;
 }
 
-const DEFAULT_ADMIN_PIN = 'astro2026';
+const LS_ADMIN_PASSWORD_KEY = 'astrovote_admin_custom_pin';
+
+export const getExpectedAdminPassword = (): string => {
+  const custom = localStorage.getItem(LS_ADMIN_PASSWORD_KEY);
+  if (custom && custom.trim()) return custom.trim();
+  return import.meta.env.VITE_ADMIN_PASSWORD || 'astro2026';
+};
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   photos,
@@ -26,6 +35,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   });
   const [passwordInput, setPasswordInput] = useState('');
   const [authError, setAuthError] = useState('');
+
+  // Password change modal state
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState('');
+
+  // Seeding state
+  const [isSeeding, setIsSeeding] = useState(false);
+  const [seedSuccess, setSeedSuccess] = useState('');
 
   // Tab State: 'ranking' | 'upload' | 'voters' | 'manage'
   const [activeTab, setActiveTab] = useState<'ranking' | 'upload' | 'voters' | 'manage'>('ranking');
@@ -78,12 +96,41 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (passwordInput === DEFAULT_ADMIN_PIN || passwordInput === 'admin') {
+    const expected = getExpectedAdminPassword();
+    if (passwordInput === expected || passwordInput === 'admin') {
       setIsAuthenticated(true);
       sessionStorage.setItem('astrovote_admin_auth', 'true');
       setAuthError('');
     } else {
-      setAuthError('Falsches Passwort. (Standard: astro2026)');
+      setAuthError('Falsches Passwort. Bitte überprüfe deine Eingabe.');
+    }
+  };
+
+  const handleSaveNewPassword = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPassword.trim()) return;
+    localStorage.setItem(LS_ADMIN_PASSWORD_KEY, newPassword.trim());
+    setPasswordSuccess('Admin-Passwort erfolgreich geändert!');
+    setTimeout(() => {
+      setIsPasswordModalOpen(false);
+      setNewPassword('');
+      setPasswordSuccess('');
+    }, 1200);
+  };
+
+  const handleSeedDemoPhotos = async () => {
+    if (!confirm('Möchtest du die 8 Demo-Astrofotos jetzt in deine Supabase-Datenbank importieren?')) return;
+    setIsSeeding(true);
+    setSeedSuccess('');
+    try {
+      await seedDemoPhotosToSupabase();
+      setSeedSuccess('8 Demofotos erfolgreich in Supabase eingefügt!');
+      onPhotosUpdated();
+      loadDashboardData();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Fehler beim Importieren');
+    } finally {
+      setIsSeeding(false);
     }
   };
 
@@ -281,6 +328,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
         <div className="flex items-center gap-3">
           <button
+            onClick={() => setIsPasswordModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-space-850 hover:bg-space-800 text-slate-300 hover:text-white text-xs border border-white/10 transition-colors"
+            title="Admin-Passwort ändern"
+          >
+            <Key className="w-3.5 h-3.5 text-astro-gold" />
+            <span>Passwort ändern</span>
+          </button>
+          <button
             onClick={loadDashboardData}
             disabled={loadingStats}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-space-850 hover:bg-space-800 text-slate-300 text-xs border border-white/10 transition-colors"
@@ -296,6 +351,36 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Supabase Empty DB Banner */}
+      {isUsingLiveSupabase() && photos.length === 0 && (
+        <div className="my-6 p-5 rounded-2xl bg-gradient-to-r from-space-900 to-space-850 border border-astro-cyan/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <h3 className="font-semibold text-white text-sm flex items-center gap-2">
+              <DownloadCloud className="w-4 h-4 text-astro-cyan" />
+              Supabase verbunden – Noch keine Fotos in der Datenbank
+            </h3>
+            <p className="text-xs text-slate-400 mt-1">
+              Deine Supabase-Tabelle <span className="font-mono text-slate-200">photos</span> ist noch leer. Du kannst im Tab „Bild-Upload“ eigene Astrofotos hochladen oder jetzt mit einem Klick die 8 Demo-Astrofotos einfügen.
+            </p>
+          </div>
+          <button
+            onClick={handleSeedDemoPhotos}
+            disabled={isSeeding}
+            className="px-4 py-2.5 rounded-xl bg-astro-cyan text-space-950 font-bold text-xs hover:shadow-glow-cyan transition-all shrink-0 flex items-center gap-2 disabled:opacity-50"
+          >
+            {isSeeding ? <RefreshCw className="w-4 h-4 animate-spin" /> : <DownloadCloud className="w-4 h-4" />}
+            <span>Demofotos in Supabase einfügen</span>
+          </button>
+        </div>
+      )}
+
+      {seedSuccess && (
+        <div className="mb-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
+          <Check className="w-4 h-4 shrink-0" />
+          <span>{seedSuccess}</span>
+        </div>
+      )}
 
       {/* Navigation Tabs */}
       <div className="flex flex-wrap gap-2 my-6">
@@ -773,6 +858,68 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Password Change Modal */}
+      {isPasswordModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-space-950/80 backdrop-blur-md">
+          <div className="w-full max-w-md rounded-2xl bg-space-900 border border-white/10 p-6 shadow-2xl relative">
+            <button
+              onClick={() => setIsPasswordModalOpen(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2.5 rounded-xl bg-astro-gold/10 text-astro-gold border border-astro-gold/30">
+                <Key className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">Admin-Passwort ändern</h3>
+                <p className="text-xs text-slate-400">Vergib ein neues Passwort für den Admin-Zugang</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleSaveNewPassword} className="space-y-4">
+              <div>
+                <label className="block text-xs font-mono text-slate-300 mb-1">Neues Passwort</label>
+                <input
+                  type="password"
+                  required
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Neues Passwort eingeben"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-space-850 border border-white/10 text-white text-sm focus:outline-none focus:border-astro-cyan"
+                  autoFocus
+                />
+              </div>
+
+              {passwordSuccess && (
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
+                  <Check className="w-4 h-4 shrink-0" />
+                  <span>{passwordSuccess}</span>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsPasswordModalOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-space-800 text-slate-300 text-xs"
+                >
+                  Abbrechen
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-astro-cyan to-astro-blue text-space-950 font-bold text-xs"
+                >
+                  Passwort speichern
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

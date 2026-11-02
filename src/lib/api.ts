@@ -151,15 +151,35 @@ export async function fetchPhotos(): Promise<Photo[]> {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      if (data && data.length > 0) return data as Photo[];
-
-      // If table is brand new & empty in Supabase, return local mock or empty list
-      return getLocalPhotos();
+      // When connected to Supabase, return actual database records
+      return (data || []) as Photo[];
     } catch (err) {
       console.warn('Supabase fetchPhotos error, falling back to local:', err);
     }
   }
   return getLocalPhotos();
+}
+
+export async function seedDemoPhotosToSupabase(): Promise<Photo[]> {
+  const client = getSupabaseClient();
+  if (!client) throw new Error('Supabase ist nicht verbunden');
+
+  const photosToInsert = INITIAL_PHOTOS.map(p => ({
+    title: p.title,
+    author: p.author,
+    image_url: p.image_url,
+    telescope: p.telescope || null,
+    exposure: p.exposure || null,
+    description: p.description || null,
+  }));
+
+  const { data, error } = await client
+    .from('photos')
+    .insert(photosToInsert)
+    .select();
+
+  if (error) throw new Error(`Fehler beim Einfügen in Supabase: ${error.message}`);
+  return (data || []) as Photo[];
 }
 
 export async function uploadPhoto(
@@ -270,7 +290,9 @@ export async function updatePhoto(id: string, updates: Partial<Photo>): Promise<
 
 export async function deletePhoto(id: string, imageUrl?: string): Promise<void> {
   const client = getSupabaseClient();
-  if (client) {
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+  if (client && isUUID) {
     // If image is in Supabase storage, attempt delete
     if (imageUrl && imageUrl.includes('/photos/')) {
       const parts = imageUrl.split('/photos/');
@@ -285,9 +307,9 @@ export async function deletePhoto(id: string, imageUrl?: string): Promise<void> 
       .eq('id', id);
 
     if (error) throw new Error(error.message);
-    return;
   }
 
+  // Always clean up local mock/demo data if matching
   const photos = getLocalPhotos().filter(p => p.id !== id);
   saveLocalPhotos(photos);
 

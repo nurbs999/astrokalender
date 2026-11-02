@@ -394,6 +394,20 @@ export function App() {
                 <RefreshCw className="w-8 h-8 animate-spin text-astro-cyan" />
                 <p className="text-sm font-mono">Lade Astrofotografien aus dem Kosmos...</p>
               </div>
+            ) : photos.length === 0 ? (
+              <div className="py-20 text-center rounded-2xl bg-space-900/60 border border-astro-cyan/30 p-8 max-w-lg mx-auto backdrop-blur-md">
+                <Sparkles className="w-12 h-12 text-astro-cyan mx-auto mb-3 animate-pulse" />
+                <h3 className="text-lg font-bold text-white">Supabase verbunden – Datenbank ist bereit!</h3>
+                <p className="text-xs text-slate-300 mt-2 leading-relaxed">
+                  Deine Live-Datenbank ist aktiv, enthält aber aktuell noch keine Fotos. Öffne den Admin-Bereich, um eigene Bilder hochzuladen oder die Beispielfotos mit einem Klick zu importieren.
+                </p>
+                <button
+                  onClick={toggleAdmin}
+                  className="mt-6 px-6 py-2.5 rounded-xl bg-gradient-to-r from-astro-cyan to-astro-blue text-space-950 font-bold text-xs shadow-glow-cyan hover:shadow-cyan-500/50 transition-all"
+                >
+                  Admin-Bereich öffnen (Fotos hochladen)
+                </button>
+              </div>
             ) : displayPhotos.length === 0 ? (
               <div className="py-20 text-center rounded-2xl bg-space-900/40 border border-white/5 p-8">
                 <CalendarDays className="w-12 h-12 text-slate-500 mx-auto mb-3" />
