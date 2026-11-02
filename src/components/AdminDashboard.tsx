@@ -243,7 +243,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return (
       <div className="min-h-[80vh] flex items-center justify-center p-4">
         <div className="w-full max-w-md p-8 rounded-2xl bg-space-900 border border-white/10 shadow-2xl relative overflow-hidden">
-          <div className="flex justify-between items-center mb-6">
+          <button
+            onClick={onExit}
+            className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-space-800 transition-colors z-20"
+            title="Schließen"
+            aria-label="Schließen"
+          >
+            <X className="w-5 h-5" />
+          </button>
+          <div className="flex justify-between items-center mb-6 pr-8">
             <button
               onClick={onExit}
               className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors"

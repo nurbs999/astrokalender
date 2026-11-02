@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, Mail, Sparkles, X, Check } from 'lucide-react';
 import { Voter } from '../types';
 
@@ -18,6 +18,15 @@ export const VoterModal: React.FC<VoterModalProps> = ({
   const [name, setName] = useState(currentVoter?.name || '');
   const [email, setEmail] = useState(currentVoter?.email || '');
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -50,21 +59,25 @@ export const VoterModal: React.FC<VoterModalProps> = ({
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-space-950/80 backdrop-blur-md animate-fade-in"
       role="dialog"
       aria-modal="true"
+      onClick={onClose}
     >
-      <div className="relative w-full max-w-md rounded-2xl bg-space-900 border border-white/10 shadow-2xl p-6 sm:p-8 overflow-hidden">
+      <div 
+        className="relative w-full max-w-md rounded-2xl bg-space-900 border border-white/10 shadow-2xl p-6 sm:p-8 overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
 
         {/* Glow Accent */}
         <div className="absolute -top-16 -right-16 w-32 h-32 bg-astro-cyan/20 rounded-full blur-3xl pointer-events-none" />
 
-        {/* Close Button if voter already exists */}
-        {currentVoter && (
-          <button
-            onClick={onClose}
-            className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-space-800 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        )}
+        {/* Close Button */}
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-space-800 transition-colors z-20"
+          title="Schließen"
+          aria-label="Schließen"
+        >
+          <X className="w-5 h-5" />
+        </button>
 
         <div className="flex items-center gap-3 mb-5">
           <div className="p-3 rounded-xl bg-astro-cyan/10 border border-astro-cyan/30 text-astro-cyan shadow-glow-cyan">
@@ -123,15 +136,13 @@ export const VoterModal: React.FC<VoterModalProps> = ({
           )}
 
           <div className="pt-2 flex gap-3">
-            {currentVoter && (
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex-1 py-2.5 px-4 rounded-xl bg-space-800 hover:bg-space-700 text-slate-300 text-sm font-medium transition-colors"
-              >
-                Abbrechen
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-2.5 px-4 rounded-xl bg-space-800 hover:bg-space-700 text-slate-300 text-sm font-medium transition-colors"
+            >
+              Abbrechen
+            </button>
             <button
               type="submit"
               className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-gradient-to-r from-astro-cyan to-astro-blue text-space-950 text-sm font-semibold hover:shadow-glow-cyan transition-all"
