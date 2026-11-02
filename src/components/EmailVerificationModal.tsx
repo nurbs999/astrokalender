@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { MailCheck, CheckCircle2, AlertCircle, X, ShieldCheck, KeyRound } from 'lucide-react';
+import { MailCheck, CheckCircle2, AlertCircle, X, ShieldCheck, KeyRound, RefreshCw, Send } from 'lucide-react';
 import { Voter } from '../types';
-import { verifyVoterEmail } from '../lib/api';
+import { verifyVoterEmail, sendOtpEmail } from '../lib/api';
 
 interface EmailVerificationModalProps {
   isOpen: boolean;
@@ -20,8 +20,30 @@ export const EmailVerificationModal: React.FC<EmailVerificationModalProps> = ({
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [resendMsg, setResendMsg] = useState<{ text: string; isError?: boolean } | null>(null);
+  const [isResending, setIsResending] = useState(false);
 
   if (!isOpen || !voter) return null;
+
+  const handleResendEmail = async () => {
+    setIsResending(true);
+    setResendMsg(null);
+    try {
+      const res = await sendOtpEmail(voter.email);
+      if (res.success) {
+        setResendMsg({ text: '✉️ Neue Bestätigungsmail wurde gesendet! Bitte prüfe deinen Posteingang & Spam-Ordner.' });
+      } else {
+        setResendMsg({
+          text: `Supabase E-Mail Meldung: ${res.error || 'Versand fehlgeschlagen'}`,
+          isError: true
+        });
+      }
+    } catch {
+      setResendMsg({ text: 'Verbindungsfehler beim E-Mail-Versand.', isError: true });
+    } finally {
+      setIsResending(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,19 +122,38 @@ export const EmailVerificationModal: React.FC<EmailVerificationModalProps> = ({
 
         <div className="p-3.5 rounded-xl bg-space-850 border border-white/5 text-xs text-slate-300 mb-5 leading-relaxed">
           <p className="mb-2">
-            Wir haben einen Bestätigungscode an <strong className="text-astro-cyan">{voter.email}</strong> gesendet.
+            Ein Bestätigungscode wurde an <strong className="text-astro-cyan">{voter.email}</strong> gesendet.
           </p>
+
           <div className="flex items-center justify-between text-[11px] pt-2 border-t border-white/5 text-slate-400">
-            <span>Code für Demo/Entwicklung:</span>
+            <button
+              type="button"
+              onClick={handleResendEmail}
+              disabled={isResending}
+              className="text-astro-cyan hover:underline font-mono flex items-center gap-1 disabled:opacity-50"
+            >
+              {isResending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+              <span>E-Mail erneut senden</span>
+            </button>
+
             <button
               type="button"
               onClick={handleUseDemoCode}
-              className="text-astro-cyan hover:underline font-mono font-bold flex items-center gap-1"
+              className="text-slate-400 hover:text-white font-mono flex items-center gap-1"
+              title="Test-Code einfügen"
             >
               <KeyRound className="w-3 h-3" />
-              <span>{voter.verification_code || '123456'} (Einsetzen)</span>
+              <span>Test-Code: {voter.verification_code || '123456'}</span>
             </button>
           </div>
+
+          {resendMsg && (
+            <div className={`mt-2.5 p-2 rounded-lg text-[11px] font-mono ${
+              resendMsg.isError ? 'bg-amber-500/10 text-amber-300 border border-amber-500/30' : 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30'
+            }`}>
+              {resendMsg.text}
+            </div>
+          )}
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">

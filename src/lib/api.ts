@@ -137,6 +137,32 @@ function saveLocalVoters(voters: Voter[]) {
   localStorage.setItem(LS_VOTERS_KEY, JSON.stringify(voters));
 }
 
+export async function sendOtpEmail(email: string): Promise<{ success: boolean; error?: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, error: 'Kein Supabase verbunden (Demo-Modus aktiv).' };
+  }
+
+  try {
+    const cleanEmail = email.toLowerCase().trim();
+    const { error } = await client.auth.signInWithOtp({
+      email: cleanEmail,
+      options: {
+        shouldCreateUser: true,
+      }
+    });
+
+    if (error) {
+      console.warn('Supabase signInWithOtp error:', error.message);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Fehler beim E-Mail-Versand';
+    return { success: false, error: msg };
+  }
+}
+
 export async function registerOrUpdateVoter(params: { name: string; email: string }): Promise<Voter> {
   const email = params.email.toLowerCase().trim();
   const name = params.name.trim();
@@ -164,6 +190,11 @@ export async function registerOrUpdateVoter(params: { name: string; email: strin
         }, { onConflict: 'email' })
         .select()
         .single();
+
+      // Trigger real email via Supabase Auth OTP if not yet verified
+      if (!isVerified) {
+        sendOtpEmail(email).catch(e => console.warn('OTP dispatch background notice:', e));
+      }
 
       if (!error && data) {
         return data as Voter;
@@ -203,14 +234,31 @@ export async function verifyVoterEmail(email: string, code: string): Promise<boo
   const client = getSupabaseClient();
 
   if (client) {
+    let authVerified = false;
+
+    // 1. Try Supabase Auth verifyOtp (for real emailed 6-digit tokens)
+    try {
+      const { error: otpError } = await client.auth.verifyOtp({
+        email: cleanEmail,
+        token: cleanCode,
+        type: 'email'
+      });
+      if (!otpError) {
+        authVerified = true;
+      }
+    } catch (err) {
+      console.warn('Supabase Auth verifyOtp check failed:', err);
+    }
+
+    // 2. Also check database verification_code or master debug code '123456'
     try {
       const { data: voter } = await client
         .from('voters')
         .select('*')
         .eq('email', cleanEmail)
-        .single();
+        .maybeSingle();
 
-      if (voter && (voter.verification_code === cleanCode || cleanCode === '123456')) {
+      if (authVerified || (voter && (voter.verification_code === cleanCode || cleanCode === '123456'))) {
         await client
           .from('voters')
           .update({
