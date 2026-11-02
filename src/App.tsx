@@ -7,7 +7,7 @@ import {
 import { Photo, Voter, Vote, Rating, PhotoVoteSummary } from './types';
 import {
   fetchPhotos, fetchUserVotes, saveVote, fetchAllVotesSummary,
-  isUsingLiveSupabase, registerOrUpdateVoter
+  isUsingLiveSupabase, registerOrUpdateVoter, getSupabaseClient
 } from './lib/api';
 import { Navbar } from './components/Navbar';
 import { PhotoCard } from './components/PhotoCard';
@@ -126,6 +126,56 @@ export function App() {
   useEffect(() => {
     loadUserVotes(currentVoter);
   }, [currentVoter, loadUserVotes]);
+
+  // Listen for Supabase Magic Link click / Auth state changes
+  useEffect(() => {
+    const client = getSupabaseClient();
+    if (!client) return;
+
+    const { data: { subscription } } = client.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user?.email) {
+        const userEmail = session.user.email.toLowerCase().trim();
+
+        try {
+          // 1. Mark verified in database
+          await client.from('voters').update({
+            is_verified: true,
+            verified_at: new Date().toISOString()
+          }).eq('email', userEmail);
+        } catch (e) {
+          console.warn('Error updating voter verification in Supabase:', e);
+        }
+
+        // 2. Update local voter state
+        setCurrentVoter(prev => {
+          const voterName = prev?.name || session.user.user_metadata?.name || userEmail.split('@')[0];
+          const updated: Voter = {
+            name: voterName,
+            email: userEmail,
+            is_verified: true,
+            verified_at: new Date().toISOString()
+          };
+          localStorage.setItem(LS_CURRENT_VOTER, JSON.stringify(updated));
+          return updated;
+        });
+
+        setIsVerificationModalOpen(false);
+        addToast('🎉 E-Mail erfolgreich über Bestätigungslink verifiziert!', 'success');
+
+        // Clean auth tokens from URL if present
+        if (window.location.hash.includes('access_token')) {
+          window.history.replaceState(null, '', window.location.pathname);
+        }
+
+        // Refresh stats
+        fetchAllVotesSummary().then(setSummaries).catch(console.error);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
 
   // Execute a vote
   const handleVote = async (photoId: string, rating: Rating, month: number | null) => {

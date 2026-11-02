@@ -145,10 +145,14 @@ export async function sendOtpEmail(email: string): Promise<{ success: boolean; e
 
   try {
     const cleanEmail = email.toLowerCase().trim();
+    // Redirect back to current site URL (e.g. https://nurbs999.github.io/astrokalender/)
+    const redirectUrl = window.location.origin + window.location.pathname;
+
     const { error } = await client.auth.signInWithOtp({
       email: cleanEmail,
       options: {
         shouldCreateUser: true,
+        emailRedirectTo: redirectUrl,
       }
     });
 

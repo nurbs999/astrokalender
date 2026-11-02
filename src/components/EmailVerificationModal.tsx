@@ -121,8 +121,11 @@ export const EmailVerificationModal: React.FC<EmailVerificationModalProps> = ({
         </div>
 
         <div className="p-3.5 rounded-xl bg-space-850 border border-white/5 text-xs text-slate-300 mb-5 leading-relaxed">
-          <p className="mb-2">
-            Ein Bestätigungscode wurde an <strong className="text-astro-cyan">{voter.email}</strong> gesendet.
+          <p className="mb-1.5">
+            Wir haben eine Bestätigungsmail an <strong className="text-astro-cyan">{voter.email}</strong> gesendet.
+          </p>
+          <p className="text-[11px] text-slate-400 mb-2.5 leading-normal">
+            👉 Klicke einfach auf den <strong>Bestätigungslink in der E-Mail</strong> (die Seite verifiziert sich dann automatisch) oder gib den Code unten ein.
           </p>
 
           <div className="flex items-center justify-between text-[11px] pt-2 border-t border-white/5 text-slate-400">
