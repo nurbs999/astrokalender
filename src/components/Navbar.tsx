@@ -1,27 +1,23 @@
 import React from 'react';
-import { Sparkles, User, Shield, Database, Award } from 'lucide-react';
+import { Sparkles, User, Database, Award } from 'lucide-react';
 import { Voter } from '../types';
 
 interface NavbarProps {
   currentVoter: Voter | null;
   totalPhotos: number;
   votedCount: number;
-  isAdmin: boolean;
   isSupabaseLive: boolean;
   onOpenVoterModal: () => void;
   onOpenSupabaseModal: () => void;
-  onToggleAdmin: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   currentVoter,
   totalPhotos,
   votedCount,
-  isAdmin,
   isSupabaseLive,
   onOpenVoterModal,
   onOpenSupabaseModal,
-  onToggleAdmin,
 }) => {
   const percentVoted = totalPhotos > 0 ? Math.round((votedCount / totalPhotos) * 100) : 0;
 

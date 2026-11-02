@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import confetti from 'canvas-confetti';
 import {
   Sparkles, Filter, CheckCircle2, Circle, ArrowUpDown,
-  Lock, RefreshCw, CalendarDays, Rocket
+  RefreshCw, CalendarDays, Rocket
 } from 'lucide-react';
 import { Photo, Voter, Vote, Rating, PhotoVoteSummary } from './types';
 import {
@@ -271,11 +271,9 @@ export function App() {
         currentVoter={currentVoter}
         totalPhotos={photos.length}
         votedCount={votedCount}
-        isAdmin={isAdminMode}
         isSupabaseLive={isUsingLiveSupabase()}
         onOpenVoterModal={() => setIsVoterModalOpen(true)}
         onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
-        onToggleAdmin={toggleAdmin}
       />
 
       {/* Main Content Area */}
