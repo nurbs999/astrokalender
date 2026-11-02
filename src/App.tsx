@@ -514,12 +514,6 @@ export function App() {
           </div>
 
           <div className="flex items-center gap-6">
-            <button
-              onClick={() => setIsSupabaseModalOpen(true)}
-              className="hover:text-slate-300 transition-colors"
-            >
-              Backend / DB Status
-            </button>
           </div>
         </div>
       </footer>
