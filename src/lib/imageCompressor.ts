@@ -23,15 +23,21 @@ export function formatBytes(bytes: number, decimals = 1): string {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
 }
 
+// DIN A3 Format: 420 × 297 mm -> Seitenverhältnis √2 ≈ 1.41421356 (1:1,4142)
+// Bei maximal 1920 Pixel in der Breite: 1920 / 1.41421356 ≈ 1358 Pixel in der Höhe
+export const DINA3_ASPECT_RATIO = 1.41421356;
+export const DINA3_MAX_WIDTH = 1920;
+export const DINA3_MAX_HEIGHT = Math.round(1920 / DINA3_ASPECT_RATIO); // 1358 px
+
 /**
  * Resizes and compresses an image file in the browser before upload.
- * - Target Max: 1920x1080 (contain, aspect ratio preserved)
+ * - Target Max: DIN A3 (1920 × 1358 px bei 1:1,4142), proportional containment preserving original aspect ratio
  * - Output: image/jpeg at quality 0.85
  */
 export async function compressImage(
   file: File,
-  maxWidth = 1920,
-  maxHeight = 1080,
+  maxWidth = DINA3_MAX_WIDTH,
+  maxHeight = DINA3_MAX_HEIGHT,
   quality = 0.85
 ): Promise<CompressionResult> {
   return new Promise((resolve, reject) => {
@@ -44,15 +50,24 @@ export async function compressImage(
         const originalWidth = img.width;
         const originalHeight = img.height;
 
-        // Calculate containment dimensions preserving aspect ratio
+        // Bounding Box für DIN A3 Limit (Querformat: max 1920 x 1358, Hochformat: max 1358 x 1920)
+        const isPortrait = originalHeight > originalWidth;
+        const limitWidth = isPortrait ? maxHeight : maxWidth;
+        const limitHeight = isPortrait ? maxWidth : maxHeight;
+
+        // Proportionale Skalierung: Das Bildverhältnis wird immer strikt beibehalten (keine Verzerrung, kein Upscaling)
         let targetWidth = originalWidth;
         let targetHeight = originalHeight;
 
-        if (targetWidth > maxWidth || targetHeight > maxHeight) {
-          const ratio = Math.min(maxWidth / originalWidth, maxHeight / originalHeight);
+        if (originalWidth > limitWidth || originalHeight > limitHeight) {
+          const ratio = Math.min(limitWidth / originalWidth, limitHeight / originalHeight);
           targetWidth = Math.round(originalWidth * ratio);
           targetHeight = Math.round(originalHeight * ratio);
         }
+
+        // Sicherstellen, dass Maße gültig sind
+        targetWidth = Math.max(1, targetWidth);
+        targetHeight = Math.max(1, targetHeight);
 
         const canvas = document.createElement('canvas');
         canvas.width = targetWidth;
@@ -72,7 +87,7 @@ export async function compressImage(
         ctx.fillStyle = '#000000';
         ctx.fillRect(0, 0, targetWidth, targetHeight);
 
-        // Draw image resized
+        // Draw image resized while strictly respecting aspect ratio
         ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
 
         canvas.toBlob(

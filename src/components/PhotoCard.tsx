@@ -55,16 +55,16 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
         #{index + 1}
       </div>
 
-      {/* Image Preview with Lightbox Trigger */}
+      {/* Image Preview with Lightbox Trigger (DIN A3 1:1.4142 Aspect Ratio) */}
       <div
-        className="relative aspect-[16/10] overflow-hidden bg-space-950 cursor-pointer group/img"
+        className="relative aspect-[1.4142/1] overflow-hidden bg-space-950 cursor-pointer group/img flex items-center justify-center"
         onClick={() => onOpenLightbox(photo)}
       >
         <img
           src={photo.image_url}
           alt={photo.title}
           loading="lazy"
-          className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover/img:scale-105"
+          className="w-full h-full object-contain transition-transform duration-700 ease-out group-hover/img:scale-105"
         />
 
         {/* Gradient Overlay */}

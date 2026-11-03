@@ -4,7 +4,7 @@ import {
   Lock, ArrowLeft, AlertCircle, FileCheck, RefreshCw, Sparkles, Key, DownloadCloud, X
 } from 'lucide-react';
 import { Photo, PhotoVoteSummary, VoterStats, MONTH_NAMES } from '../types';
-import { compressImage, CompressionResult } from '../lib/imageCompressor';
+import { compressImage, CompressionResult, DINA3_MAX_WIDTH, DINA3_MAX_HEIGHT } from '../lib/imageCompressor';
 import {
   uploadPhoto, updatePhoto, deletePhoto, fetchAllVotesSummary,
   fetchVotersList, seedDemoPhotosToSupabase, isUsingLiveSupabase
@@ -148,8 +148,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setIsCompressing(true);
 
     try {
-      // Compress with 1080p containment & 85% JPEG quality
-      const res = await compressImage(file, 1920, 1080, 0.85);
+      // Compress with DIN A3 containment (max 1920x1358 px, 1:1.4142) & 85% JPEG quality
+      const res = await compressImage(file, DINA3_MAX_WIDTH, DINA3_MAX_HEIGHT, 0.85);
       setCompressionResult(res);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Kompression fehlgeschlagen';
@@ -554,7 +554,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               Neues Astrofoto hochladen
             </h2>
             <p className="text-xs text-slate-400 mb-6">
-              Bilder werden im Browser automatisch auf max. 1920 × 1080 px verkleinert und als 85% JPEG komprimiert, bevor sie hochgeladen werden.
+              Bilder werden im Browser automatisch auf DIN A3 (max. 1920 × 1358 px, Seitenverhältnis 1:1,4142) skaliert und als 85% JPEG komprimiert, bevor sie hochgeladen werden.
             </p>
 
             <form onSubmit={handleUploadSubmit} className="space-y-6">
@@ -589,7 +589,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               {isCompressing && (
                 <div className="p-4 rounded-xl bg-space-850 border border-astro-cyan/30 flex items-center gap-3 text-astro-cyan text-sm animate-pulse">
                   <RefreshCw className="w-5 h-5 animate-spin" />
-                  <span>Komprimiere Bild im Browser per HTML5 Canvas (1080p Contain)...</span>
+                  <span>Komprimiere Bild im Browser per HTML5 Canvas (DIN A3 Contain)...</span>
                 </div>
               )}
 
@@ -598,7 +598,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <div className="flex items-center justify-between pb-3 border-b border-white/10">
                     <span className="flex items-center gap-1.5 text-xs font-mono text-emerald-400 font-semibold">
                       <FileCheck className="w-4 h-4" />
-                      Clientseitiges Pre-Processing erfolgreich
+                      Clientseitiges Pre-Processing erfolgreich (DIN A3)
                     </span>
                     <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
                       -{compressionResult.savingsPercent}% Speicherersparnis
@@ -628,15 +628,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
                   </div>
 
-                  {/* Visual Preview */}
-                  <div className="relative aspect-[16/9] max-h-56 overflow-hidden rounded-xl border border-white/10">
+                  {/* Visual Preview preserving true aspect ratio */}
+                  <div className="relative max-h-72 overflow-hidden rounded-xl border border-white/10 bg-space-900/60 flex items-center justify-center p-2">
                     <img
                       src={compressionResult.dataUrl}
                       alt="Komprimierte Vorschau"
-                      className="w-full h-full object-cover"
+                      className="max-h-64 max-w-full object-contain rounded-lg shadow-md"
                     />
-                    <div className="absolute bottom-2 left-2 px-2 py-1 rounded bg-space-950/80 backdrop-blur-md text-[10px] font-mono text-slate-300 border border-white/10">
-                      Vorschau des 1080p Ergebnisses
+                    <div className="absolute bottom-3 left-3 px-2.5 py-1 rounded-lg bg-space-950/85 backdrop-blur-md text-[11px] font-mono text-slate-300 border border-white/10 flex items-center gap-2">
+                      <span className="text-emerald-400 font-semibold">{compressionResult.compressedWidth} × {compressionResult.compressedHeight} px</span>
+                      <span className="text-slate-500">•</span>
+                      <span>Seitenverhältnis {(compressionResult.compressedWidth / compressionResult.compressedHeight).toFixed(3)}:1</span>
                     </div>
                   </div>
                 </div>
