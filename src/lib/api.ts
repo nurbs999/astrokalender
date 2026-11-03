@@ -371,21 +371,9 @@ export async function seedDemoPhotosToSupabase(): Promise<Photo[]> {
   return (data || []) as Photo[];
 }
 
-export async function uploadPhoto(
-  compressedBlob: Blob,
-  fileName: string,
-  meta: {
-    title: string;
-    author: string;
-    telescope?: string;
-    exposure?: string;
-    description?: string;
-  }
-): Promise<Photo> {
+export async function uploadImageFile(compressedBlob: Blob, fileName: string): Promise<string> {
   const client = getSupabaseClient();
-
   if (client) {
-    // 1. Upload to Supabase Storage Bucket 'photos'
     const cleanName = `${Date.now()}-${fileName.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
     const { error: uploadError } = await client.storage
       .from('photos')
@@ -399,14 +387,53 @@ export async function uploadPhoto(
       throw new Error(`Upload zum Storage fehlgeschlagen: ${uploadError.message}`);
     }
 
-    // 2. Get Public URL
     const { data: publicUrlData } = client.storage
       .from('photos')
       .getPublicUrl(cleanName);
 
-    const imageUrl = publicUrlData.publicUrl;
+    return publicUrlData.publicUrl;
+  }
 
-    // 3. Insert record in photos table
+  // Local storage mode: convert blob to data URL and persist locally
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      resolve(reader.result as string);
+    };
+    reader.readAsDataURL(compressedBlob);
+  });
+}
+
+export async function deleteStorageImage(imageUrl?: string): Promise<void> {
+  if (!imageUrl) return;
+  const client = getSupabaseClient();
+  if (client && imageUrl.includes('/photos/')) {
+    const parts = imageUrl.split('/photos/');
+    if (parts[1]) {
+      try {
+        await client.storage.from('photos').remove([parts[1]]);
+      } catch (e) {
+        console.warn('Error removing old storage image:', e);
+      }
+    }
+  }
+}
+
+export async function uploadPhoto(
+  compressedBlob: Blob,
+  fileName: string,
+  meta: {
+    title: string;
+    author: string;
+    telescope?: string;
+    exposure?: string;
+    description?: string;
+  }
+): Promise<Photo> {
+  const imageUrl = await uploadImageFile(compressedBlob, fileName);
+  const client = getSupabaseClient();
+
+  if (client) {
     const { data: newPhoto, error: insertError } = await client
       .from('photos')
       .insert({
@@ -428,29 +455,21 @@ export async function uploadPhoto(
     return newPhoto as Photo;
   }
 
-  // Local storage mode: convert blob to data URL and persist locally
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const dataUrl = reader.result as string;
-      const newPhoto: Photo = {
-        id: `photo-${Date.now()}`,
-        title: meta.title,
-        author: meta.author,
-        image_url: dataUrl,
-        telescope: meta.telescope,
-        exposure: meta.exposure,
-        description: meta.description,
-        created_at: new Date().toISOString()
-      };
+  const newPhoto: Photo = {
+    id: `photo-${Date.now()}`,
+    title: meta.title,
+    author: meta.author,
+    image_url: imageUrl,
+    telescope: meta.telescope,
+    exposure: meta.exposure,
+    description: meta.description,
+    created_at: new Date().toISOString()
+  };
 
-      const existing = getLocalPhotos();
-      const updated = [newPhoto, ...existing];
-      saveLocalPhotos(updated);
-      resolve(newPhoto);
-    };
-    reader.readAsDataURL(compressedBlob);
-  });
+  const existing = getLocalPhotos();
+  const updated = [newPhoto, ...existing];
+  saveLocalPhotos(updated);
+  return newPhoto;
 }
 
 export async function updatePhoto(id: string, updates: Partial<Photo>): Promise<Photo> {
@@ -483,12 +502,7 @@ export async function deletePhoto(id: string, imageUrl?: string): Promise<void> 
 
   if (client && isUUID) {
     // If image is in Supabase storage, attempt delete
-    if (imageUrl && imageUrl.includes('/photos/')) {
-      const parts = imageUrl.split('/photos/');
-      if (parts[1]) {
-        await client.storage.from('photos').remove([parts[1]]);
-      }
-    }
+    await deleteStorageImage(imageUrl);
 
     const { error } = await client
       .from('photos')

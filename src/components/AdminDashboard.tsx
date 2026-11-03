@@ -7,7 +7,8 @@ import { Photo, PhotoVoteSummary, VoterStats, MONTH_NAMES } from '../types';
 import { compressImage, CompressionResult, DINA3_MAX_WIDTH, DINA3_MAX_HEIGHT } from '../lib/imageCompressor';
 import {
   uploadPhoto, updatePhoto, deletePhoto, fetchAllVotesSummary,
-  fetchVotersList, seedDemoPhotosToSupabase, isUsingLiveSupabase
+  fetchVotersList, seedDemoPhotosToSupabase, isUsingLiveSupabase,
+  uploadImageFile, deleteStorageImage
 } from '../lib/api';
 
 interface AdminDashboardProps {
@@ -67,6 +68,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Edit Photo state
   const [editingPhoto, setEditingPhoto] = useState<Photo | null>(null);
+  const [editFile, setEditFile] = useState<File | null>(null);
+  const [editCompressionResult, setEditCompressionResult] = useState<CompressionResult | null>(null);
+  const [isEditCompressing, setIsEditCompressing] = useState(false);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editError, setEditError] = useState('');
 
   // Load stats
   const loadDashboardData = async () => {
@@ -209,20 +215,76 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  const handleOpenEdit = (photo: Photo) => {
+    setEditingPhoto(photo);
+    setEditFile(null);
+    setEditCompressionResult(null);
+    setIsEditCompressing(false);
+    setIsSavingEdit(false);
+    setEditError('');
+  };
+
+  const handleEditFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setEditFile(file);
+    setEditError('');
+    setIsEditCompressing(true);
+
+    try {
+      const res = await compressImage(file, DINA3_MAX_WIDTH, DINA3_MAX_HEIGHT, 0.85);
+      setEditCompressionResult(res);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Kompression des neuen Bildes fehlgeschlagen';
+      setEditError(msg);
+    } finally {
+      setIsEditCompressing(false);
+    }
+  };
+
+  const handleCancelNewEditImage = () => {
+    setEditFile(null);
+    setEditCompressionResult(null);
+    setIsEditCompressing(false);
+  };
+
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingPhoto) return;
 
+    setIsSavingEdit(true);
+    setEditError('');
+
     try {
+      let newImageUrl: string | undefined = undefined;
+
+      // If a new image was selected and compressed, upload it
+      if (editCompressionResult) {
+        newImageUrl = await uploadImageFile(editCompressionResult.blob, editCompressionResult.file.name);
+
+        // Delete old storage image if replacing
+        if (editingPhoto.image_url && editingPhoto.image_url !== newImageUrl) {
+          deleteStorageImage(editingPhoto.image_url).catch(console.warn);
+        }
+      }
+
       await updatePhoto(editingPhoto.id, {
-        title: editingPhoto.title,
-        author: editingPhoto.author,
+        title: editingPhoto.title.trim(),
+        author: editingPhoto.author.trim(),
+        ...(newImageUrl ? { image_url: newImageUrl } : {})
       });
+
       setEditingPhoto(null);
+      setEditFile(null);
+      setEditCompressionResult(null);
       onPhotosUpdated();
       loadDashboardData();
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Fehler beim Aktualisieren');
+      const msg = err instanceof Error ? err.message : 'Fehler beim Aktualisieren';
+      setEditError(msg);
+    } finally {
+      setIsSavingEdit(false);
     }
   };
 
@@ -801,7 +863,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                 <div className="flex items-center gap-2 shrink-0">
                   <button
-                    onClick={() => setEditingPhoto(photo)}
+                    onClick={() => handleOpenEdit(photo)}
                     className="p-2 rounded-lg bg-space-800 hover:bg-space-700 text-slate-300 hover:text-white border border-white/10 transition-colors"
                     title="Bearbeiten"
                   >
@@ -885,45 +947,156 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {/* Edit Modal */}
       {editingPhoto && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-space-950/80 backdrop-blur-md">
-          <div className="w-full max-w-lg rounded-2xl bg-space-900 border border-white/10 p-6 shadow-2xl">
-            <h3 className="text-lg font-bold text-white mb-4">Foto bearbeiten</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-space-950/85 backdrop-blur-md animate-fade-in overflow-y-auto">
+          <div className="w-full max-w-xl rounded-2xl bg-space-900 border border-white/10 p-6 sm:p-7 shadow-2xl relative my-8">
+            <div className="flex items-center justify-between pb-3 mb-4 border-b border-white/10">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <Edit2 className="w-5 h-5 text-astro-cyan" />
+                <span>Foto bearbeiten</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingPhoto(null);
+                  handleCancelNewEditImage();
+                }}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-space-800 transition-colors"
+                title="Schließen"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
             <form onSubmit={handleSaveEdit} className="space-y-4">
+              
+              {/* Image Preview & Replacement Section */}
               <div>
-                <label className="block text-xs font-mono text-slate-300 mb-1">Titel</label>
+                <label className="block text-xs font-mono text-slate-300 mb-2">
+                  Foto-Vorschau & Bilddatei:
+                </label>
+                <div className="relative rounded-xl border border-white/10 bg-space-950/80 p-3 overflow-hidden">
+                  <div className="relative aspect-[1.4142/1] max-h-56 w-full overflow-hidden rounded-lg bg-space-900 flex items-center justify-center">
+                    <img
+                      src={editCompressionResult ? editCompressionResult.dataUrl : editingPhoto.image_url}
+                      alt={editingPhoto.title}
+                      className="max-h-full max-w-full object-contain rounded-md"
+                    />
+
+                    {/* Status Pill on Preview */}
+                    <div className="absolute top-2 left-2 px-2.5 py-1 rounded-md bg-space-950/85 backdrop-blur-md text-[11px] font-mono border border-white/10">
+                      {editCompressionResult ? (
+                        <span className="text-emerald-400 font-semibold flex items-center gap-1.5">
+                          <Check className="w-3.5 h-3.5" />
+                          Neues Bild ausgewählt ({editCompressionResult.compressedWidth} × {editCompressionResult.compressedHeight} px)
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">Aktuelles Bild</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Compression stats for new image */}
+                  {editCompressionResult && (
+                    <div className="mt-2.5 p-2.5 rounded-lg bg-space-900 border border-emerald-500/20 text-xs font-mono flex items-center justify-between">
+                      <div className="text-slate-300 text-[11px]">
+                        <span className="text-emerald-400 font-bold">{editCompressionResult.formattedCompressedSize}</span>
+                        <span className="text-slate-500"> (vormals {editCompressionResult.formattedOriginalSize}, -{editCompressionResult.savingsPercent}%)</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleCancelNewEditImage}
+                        className="text-[11px] text-rose-400 hover:text-rose-300 hover:underline font-medium"
+                      >
+                        Altes Bild behalten
+                      </button>
+                    </div>
+                  )}
+
+                  {/* File selector input */}
+                  <div className="mt-3">
+                    <label className="relative flex items-center justify-center gap-2 w-full py-2.5 px-3 rounded-xl border border-dashed border-white/20 hover:border-astro-cyan/60 bg-space-900/60 hover:bg-space-900 transition-colors cursor-pointer text-xs font-mono text-slate-300 hover:text-white">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleEditFileChange}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                        disabled={isEditCompressing || isSavingEdit}
+                      />
+                      {isEditCompressing ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-astro-cyan" />
+                          <span className="text-astro-cyan">Komprimiere neues Bild (DIN A3)...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-3.5 h-3.5 text-astro-cyan" />
+                          <span>{editCompressionResult ? 'Anderes Bild wählen (DIN A3)' : 'Neues Bild hochladen / ersetzen (DIN A3)'}</span>
+                        </>
+                      )}
+                    </label>
+                    <p className="text-[10px] font-mono text-slate-500 mt-1 text-center">
+                      Wird automatisch auf DIN A3 (max. 1920 × 1358 px, 1:1,4142) im Browser komprimiert.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-mono text-slate-300 mb-1">Titel des Objekts *</label>
                 <input
                   type="text"
                   value={editingPhoto.title}
                   onChange={(e) => setEditingPhoto({ ...editingPhoto, title: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl bg-space-850 border border-white/10 text-white text-sm"
+                  className="w-full px-3 py-2 rounded-xl bg-space-850 border border-white/10 text-white text-sm focus:border-astro-cyan focus:outline-none focus:ring-1 focus:ring-astro-cyan"
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-mono text-slate-300 mb-1">Fotograf</label>
+                <label className="block text-xs font-mono text-slate-300 mb-1">Fotograf *</label>
                 <input
                   type="text"
                   value={editingPhoto.author}
                   onChange={(e) => setEditingPhoto({ ...editingPhoto, author: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl bg-space-850 border border-white/10 text-white text-sm"
+                  className="w-full px-3 py-2 rounded-xl bg-space-850 border border-white/10 text-white text-sm focus:border-astro-cyan focus:outline-none focus:ring-1 focus:ring-astro-cyan"
                   required
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
+              {editError && (
+                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{editError}</span>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-white/5">
                 <button
                   type="button"
-                  onClick={() => setEditingPhoto(null)}
-                  className="px-4 py-2 rounded-xl bg-space-800 text-slate-300 text-xs"
+                  onClick={() => {
+                    setEditingPhoto(null);
+                    handleCancelNewEditImage();
+                  }}
+                  className="px-4 py-2.5 rounded-xl bg-space-800 hover:bg-space-700 text-slate-300 text-xs transition-colors"
                 >
                   Abbrechen
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-astro-cyan text-space-950 font-bold text-xs"
+                  disabled={isSavingEdit || isEditCompressing}
+                  className="px-5 py-2.5 rounded-xl bg-astro-cyan hover:bg-astro-cyan/90 text-space-950 font-bold text-xs flex items-center gap-2 shadow-glow-cyan/20 transition-all disabled:opacity-50"
                 >
-                  Änderungen speichern
+                  {isSavingEdit ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Speichere Änderungen...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Änderungen speichern</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>
