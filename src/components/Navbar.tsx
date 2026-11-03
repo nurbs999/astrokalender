@@ -97,27 +97,14 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            {/* Supabase status badge */}
-            <button
-              onClick={onOpenSupabaseModal}
-              title={isSupabaseLive ? "Supabase verbunden" : "Demo-Modus aktiv. Klicke zur Konfiguration von Supabase"}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-mono transition-colors border ${isSupabaseLive
-                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20"
-                : "bg-amber-500/10 text-amber-300 border-amber-500/30 hover:bg-amber-500/20"
-                }`}
-            >
-              <Database className="w-3.5 h-3.5" />
-              <span className="hidden xl:inline">{isSupabaseLive ? "Supabase Live" : "Demo Modus"}</span>
-            </button>
-
             {/* Voter identification badge / Login Button */}
             <button
               onClick={onOpenVoterModal}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-all shadow-sm group ${!currentVoter
-                  ? 'bg-astro-cyan/10 hover:bg-astro-cyan/20 border-astro-cyan/40 text-astro-cyan shadow-glow-cyan/30'
-                  : currentVoter.is_verified
-                    ? 'bg-space-850 hover:bg-space-800 border-emerald-500/30 text-slate-200'
-                    : 'bg-space-850 hover:bg-space-800 border-amber-500/30 text-slate-200'
+                ? 'bg-astro-cyan/10 hover:bg-astro-cyan/20 border-astro-cyan/40 text-astro-cyan shadow-glow-cyan/30'
+                : currentVoter.is_verified
+                  ? 'bg-space-850 hover:bg-space-800 border-emerald-500/30 text-slate-200'
+                  : 'bg-space-850 hover:bg-space-800 border-amber-500/30 text-slate-200'
                 }`}
               title={currentVoter ? "Wählerdaten ändern" : "Jetzt registrieren"}
             >
