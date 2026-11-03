@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Upload, BarChart3, Users, Image as ImageIcon, Trash2, Edit2, Check,
   Lock, ArrowLeft, AlertCircle, FileCheck, RefreshCw, Sparkles, Key, DownloadCloud, X
@@ -73,6 +73,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isEditCompressing, setIsEditCompressing] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [editError, setEditError] = useState('');
+  const [isEditDragging, setIsEditDragging] = useState(false);
+  const [isUploadDragging, setIsUploadDragging] = useState(false);
+  const editFileInputRef = useRef<HTMLInputElement>(null);
 
   // Load stats
   const loadDashboardData = async () => {
@@ -144,14 +147,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   // Image Selection & Client-Side Compression
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const processUploadFile = async (file: File) => {
     setSelectedFile(file);
     setUploadError('');
     setUploadSuccess('');
     setIsCompressing(true);
+
+    // Dateinamen ohne Dateiendung automatisch als Titel / Bildnamen übernehmen
+    const nameWithoutExt = file.name.replace(/\.[^/.]+$/, '').trim();
+    if (nameWithoutExt) {
+      setTitle(nameWithoutExt);
+    }
 
     try {
       // Compress with DIN A3 containment (max 1920x1358 px, 1:1.4142) & 85% JPEG quality
@@ -163,6 +169,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     } finally {
       setIsCompressing(false);
     }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) processUploadFile(file);
   };
 
   const handleUploadSubmit = async (e: React.FormEvent) => {
@@ -221,13 +232,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setEditCompressionResult(null);
     setIsEditCompressing(false);
     setIsSavingEdit(false);
+    setIsEditDragging(false);
     setEditError('');
   };
 
-  const handleEditFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const processEditFile = async (file: File) => {
     setEditFile(file);
     setEditError('');
     setIsEditCompressing(true);
@@ -243,10 +252,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  const handleEditFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) processEditFile(file);
+  };
+
   const handleCancelNewEditImage = () => {
     setEditFile(null);
     setEditCompressionResult(null);
     setIsEditCompressing(false);
+    setIsEditDragging(false);
   };
 
   const handleSaveEdit = async (e: React.FormEvent) => {
@@ -626,7 +641,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <label className="block text-xs font-mono text-slate-300 mb-2">
                   Originaldatei auswählen (RAW / High-Res JPG / PNG 10–50 MB möglich):
                 </label>
-                <div className="relative border-2 border-dashed border-white/20 hover:border-astro-cyan/60 rounded-2xl p-8 text-center bg-space-950/40 hover:bg-space-950/60 transition-all cursor-pointer group">
+                <div
+                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsUploadDragging(true); }}
+                  onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsUploadDragging(true); }}
+                  onDragLeave={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                    setIsUploadDragging(false);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setIsUploadDragging(false);
+                    const file = e.dataTransfer.files?.[0];
+                    if (file && file.type.startsWith('image/')) {
+                      processUploadFile(file);
+                    }
+                  }}
+                  className={`relative border-2 border-dashed rounded-2xl p-8 text-center transition-all cursor-pointer group ${
+                    isUploadDragging
+                      ? 'border-astro-cyan bg-astro-cyan/15 ring-2 ring-astro-cyan/50 shadow-glow-cyan'
+                      : 'border-white/20 hover:border-astro-cyan/60 bg-space-950/40 hover:bg-space-950/60'
+                  }`}
+                >
                   <input
                     type="file"
                     accept="image/*"
@@ -638,7 +676,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <ImageIcon className="w-8 h-8" />
                     </div>
                     <span className="text-sm font-medium text-slate-200">
-                      {selectedFile ? selectedFile.name : 'Klicke hier oder ziehe eine Bilddatei hinein'}
+                      {isUploadDragging
+                        ? 'Bilddatei hier loslassen...'
+                        : selectedFile
+                        ? selectedFile.name
+                        : 'Klicke hier oder ziehe eine Bilddatei hinein'}
                     </span>
                     <span className="text-xs text-slate-500 mt-1 font-mono">
                       JPG, PNG, WebP bis 50 MB
@@ -969,28 +1011,72 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
             <form onSubmit={handleSaveEdit} className="space-y-4">
               
-              {/* Image Preview & Replacement Section */}
+              {/* Image Preview & Replacement Section with Drag & Drop */}
               <div>
                 <label className="block text-xs font-mono text-slate-300 mb-2">
-                  Foto-Vorschau & Bilddatei:
+                  Foto-Vorschau & Bilddatei (Klicken oder neues Bild hierher ziehen):
                 </label>
-                <div className="relative rounded-xl border border-white/10 bg-space-950/80 p-3 overflow-hidden">
-                  <div className="relative aspect-[1.4142/1] max-h-56 w-full overflow-hidden rounded-lg bg-space-900 flex items-center justify-center">
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setIsEditDragging(true);
+                  }}
+                  onDragEnter={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setIsEditDragging(true);
+                  }}
+                  onDragLeave={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                    setIsEditDragging(false);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setIsEditDragging(false);
+                    const file = e.dataTransfer.files?.[0];
+                    if (file && file.type.startsWith('image/')) {
+                      processEditFile(file);
+                    }
+                  }}
+                  className={`relative rounded-xl border-2 transition-all p-3 overflow-hidden ${
+                    isEditDragging
+                      ? 'border-astro-cyan bg-astro-cyan/15 ring-2 ring-astro-cyan/50 shadow-glow-cyan'
+                      : 'border-white/10 bg-space-950/80 hover:border-astro-cyan/40'
+                  }`}
+                >
+                  {/* Drag overlay indicator */}
+                  {isEditDragging && (
+                    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-space-950/90 border-2 border-dashed border-astro-cyan rounded-xl backdrop-blur-sm pointer-events-none">
+                      <Upload className="w-10 h-10 text-astro-cyan animate-bounce mb-2" />
+                      <span className="text-sm font-bold text-white">Neues Bild hier loslassen</span>
+                      <span className="text-xs text-astro-cyan font-mono mt-1">Wird automatisch auf DIN A3 optimiert</span>
+                    </div>
+                  )}
+
+                  <div
+                    onClick={() => editFileInputRef.current?.click()}
+                    className="relative aspect-[1.4142/1] max-h-56 w-full overflow-hidden rounded-lg bg-space-900 flex items-center justify-center cursor-pointer group"
+                    title="Klicken oder Bild hineinziehen, um das Foto zu ersetzen"
+                  >
                     <img
                       src={editCompressionResult ? editCompressionResult.dataUrl : editingPhoto.image_url}
                       alt={editingPhoto.title}
-                      className="max-h-full max-w-full object-contain rounded-md"
+                      className="max-h-full max-w-full object-contain rounded-md transition-transform duration-300 group-hover:scale-[1.02]"
                     />
 
                     {/* Status Pill on Preview */}
-                    <div className="absolute top-2 left-2 px-2.5 py-1 rounded-md bg-space-950/85 backdrop-blur-md text-[11px] font-mono border border-white/10">
+                    <div className="absolute top-2 left-2 px-2.5 py-1 rounded-md bg-space-950/85 backdrop-blur-md text-[11px] font-mono border border-white/10 pointer-events-none">
                       {editCompressionResult ? (
                         <span className="text-emerald-400 font-semibold flex items-center gap-1.5">
                           <Check className="w-3.5 h-3.5" />
                           Neues Bild ausgewählt ({editCompressionResult.compressedWidth} × {editCompressionResult.compressedHeight} px)
                         </span>
                       ) : (
-                        <span className="text-slate-400">Aktuelles Bild</span>
+                        <span className="text-slate-400">Aktuelles Bild (Klicken oder neues Bild hier ablegen)</span>
                       )}
                     </div>
                   </div>
@@ -1004,7 +1090,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
                       <button
                         type="button"
-                        onClick={handleCancelNewEditImage}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCancelNewEditImage();
+                        }}
                         className="text-[11px] text-rose-400 hover:text-rose-300 hover:underline font-medium"
                       >
                         Altes Bild behalten
@@ -1012,16 +1101,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
                   )}
 
+                  {/* Hidden file input */}
+                  <input
+                    ref={editFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleEditFileChange}
+                    className="hidden"
+                    disabled={isEditCompressing || isSavingEdit}
+                  />
+
                   {/* File selector input */}
                   <div className="mt-3">
-                    <label className="relative flex items-center justify-center gap-2 w-full py-2.5 px-3 rounded-xl border border-dashed border-white/20 hover:border-astro-cyan/60 bg-space-900/60 hover:bg-space-900 transition-colors cursor-pointer text-xs font-mono text-slate-300 hover:text-white">
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleEditFileChange}
-                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                        disabled={isEditCompressing || isSavingEdit}
-                      />
+                    <button
+                      type="button"
+                      onClick={() => editFileInputRef.current?.click()}
+                      disabled={isEditCompressing || isSavingEdit}
+                      className="relative flex items-center justify-center gap-2 w-full py-2.5 px-3 rounded-xl border border-dashed border-white/20 hover:border-astro-cyan/60 bg-space-900/60 hover:bg-space-900 transition-colors cursor-pointer text-xs font-mono text-slate-300 hover:text-white"
+                    >
                       {isEditCompressing ? (
                         <>
                           <RefreshCw className="w-3.5 h-3.5 animate-spin text-astro-cyan" />
@@ -1030,12 +1127,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       ) : (
                         <>
                           <Upload className="w-3.5 h-3.5 text-astro-cyan" />
-                          <span>{editCompressionResult ? 'Anderes Bild wählen (DIN A3)' : 'Neues Bild hochladen / ersetzen (DIN A3)'}</span>
+                          <span>{editCompressionResult ? 'Anderes Bild wählen oder hierher ziehen' : 'Neues Bild wählen oder hierher ziehen (DIN A3)'}</span>
                         </>
                       )}
-                    </label>
+                    </button>
                     <p className="text-[10px] font-mono text-slate-500 mt-1 text-center">
-                      Wird automatisch auf DIN A3 (max. 1920 × 1358 px, 1:1,4142) im Browser komprimiert.
+                      Drag & Drop direkt auf das Bild möglich. Wird automatisch auf DIN A3 optimiert.
                     </p>
                   </div>
                 </div>
