@@ -270,7 +270,25 @@ export function App() {
         [photoId]: { rating, suggested_month: month }
       }).filter(v => v.rating !== 'none' || v.suggested_month !== null).length;
 
-      if (totalVotedAfter === photos.length && photos.length > 0) {
+      // Check if all 12 calendar months have at least one photo chosen
+      const allMonthsAfter = new Set<number>();
+      Object.values({
+        ...userVotes,
+        [photoId]: { rating, suggested_month: month }
+      }).forEach(v => {
+        if (v.suggested_month && v.suggested_month >= 1 && v.suggested_month <= 12) {
+          allMonthsAfter.add(v.suggested_month);
+        }
+      });
+
+      if (allMonthsAfter.size === 12 && selectedMonths.length < 12) {
+        confetti({
+          particleCount: 120,
+          spread: 80,
+          origin: { y: 0.6 }
+        });
+        addToast('🎉 Fantastisch! Du hast für alle 12 Kalendermonate Fotos vorgeschlagen!', 'success');
+      } else if (totalVotedAfter === photos.length && photos.length > 0) {
         confetti({
           particleCount: 100,
           spread: 70,
@@ -398,6 +416,17 @@ export function App() {
     v => v.rating !== 'none' || v.suggested_month !== null
   ).length;
 
+  // Set of months (1..12) that have at least one photo assigned by the current voter
+  const selectedMonths = useMemo(() => {
+    const set = new Set<number>();
+    Object.values(userVotes).forEach(v => {
+      if (v.suggested_month && v.suggested_month >= 1 && v.suggested_month <= 12) {
+        set.add(v.suggested_month);
+      }
+    });
+    return Array.from(set);
+  }, [userVotes]);
+
   return (
     <div className="min-h-screen flex flex-col bg-space-950 text-slate-100 selection:bg-astro-cyan/30">
 
@@ -406,6 +435,7 @@ export function App() {
         currentVoter={currentVoter}
         totalPhotos={photos.length}
         votedCount={votedCount}
+        selectedMonths={selectedMonths}
         isSupabaseLive={isUsingLiveSupabase()}
         onOpenVoterModal={() => setIsVoterModalOpen(true)}
         onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
@@ -444,30 +474,6 @@ export function App() {
               <p className="mt-4 text-sm sm:text-base text-slate-300 leading-relaxed">
                 Stimme für jedes Foto mit <strong>Daumen hoch (👍)</strong> ab und schlage den passenden Kalendermonat vor. Deine Stimmen werden sicher gespeichert und fließen direkt in das Gesamtergebnis ein.
               </p>
-
-              {/* Progress Bar Card */}
-              <div className="mt-6 p-4 rounded-2xl bg-space-900/60 border border-white/10 backdrop-blur-md max-w-xl mx-auto flex items-center justify-between gap-4">
-                <div className="text-left">
-                  <div className="text-xs font-mono text-slate-400">Dein Abstimmungs-Status:</div>
-                  <div className="text-sm font-semibold text-white mt-0.5">
-                    {votedCount} von {photos.length} Fotos bewertet
-                  </div>
-                </div>
-
-                <div className="flex-1 max-w-[200px]">
-                  <div className="w-full h-2.5 bg-space-800 rounded-full overflow-hidden border border-white/5">
-                    <div
-                      className="h-full bg-gradient-to-r from-astro-cyan to-astro-lime rounded-full transition-all duration-500 ease-out"
-                      style={{ width: `${photos.length > 0 ? (votedCount / photos.length) * 100 : 0}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div className="text-right font-mono text-xs font-bold text-astro-cyan">
-                  {photos.length > 0 ? Math.round((votedCount / photos.length) * 100) : 0}%
-                </div>
-              </div>
-
               {/* Unverified Email Warning Banner */}
               {currentVoter && !currentVoter.is_verified && (
                 <div className="mt-4 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/40 text-amber-200 backdrop-blur-md max-w-xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg shadow-amber-950/20">

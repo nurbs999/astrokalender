@@ -1,11 +1,12 @@
 import React from 'react';
-import { Sparkles, User, Database, Award, AlertCircle, ArrowRight, LogOut } from 'lucide-react';
-import { Voter } from '../types';
+import { Sparkles, User, Database, Award, AlertCircle, ArrowRight, LogOut, CalendarDays } from 'lucide-react';
+import { Voter, MONTH_NAMES, MONTH_SHORT_NAMES } from '../types';
 
 interface NavbarProps {
   currentVoter: Voter | null;
   totalPhotos: number;
   votedCount: number;
+  selectedMonths: number[];
   isSupabaseLive: boolean;
   onOpenVoterModal: () => void;
   onOpenSupabaseModal: () => void;
@@ -17,6 +18,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentVoter,
   totalPhotos,
   votedCount,
+  selectedMonths,
   isSupabaseLive,
   onOpenVoterModal,
   onOpenSupabaseModal,
@@ -24,6 +26,33 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLogout,
 }) => {
   const percentVoted = totalPhotos > 0 ? Math.round((votedCount / totalPhotos) * 100) : 0;
+  const row1 = [1, 2, 3, 4, 5, 6];
+  const row2 = [7, 8, 9, 10, 11, 12];
+  const selectedCount = selectedMonths.length;
+
+  const renderMonthRow = (months: number[]) => (
+    <div className="grid grid-cols-6 gap-1 w-full">
+      {months.map((m) => {
+        const isSelected = selectedMonths.includes(m);
+        const shortName = MONTH_SHORT_NAMES[m - 1];
+        const fullName = MONTH_NAMES[m - 1];
+
+        return (
+          <div
+            key={m}
+            title={`${fullName}: ${isSelected ? 'Mindestens ein Bild ausgewählt' : 'Noch kein Bild zugewiesen'}`}
+            className={`px-1 py-0.5 rounded text-[10px] font-mono text-center border transition-all duration-300 ${
+              isSelected
+                ? 'bg-astro-cyan/25 border-astro-cyan text-astro-cyan font-bold shadow-glow-cyan/20 scale-[1.02]'
+                : 'bg-space-900/60 border-white/5 text-slate-500'
+            }`}
+          >
+            {shortName}
+          </div>
+        );
+      })}
+    </div>
+  );
 
   return (
     <header className="sticky top-0 z-40 bg-space-950/80 backdrop-blur-md border-b border-white/10 transition-all">
@@ -51,23 +80,19 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           </div>
 
-          {/* Voting Progress in Header */}
-          <div className="hidden lg:flex flex-col items-center gap-1.5 w-56">
-            <div className="flex items-center justify-between w-full text-xs font-mono">
-              <span className="text-slate-400 flex items-center gap-1">
-                <Award className="w-3.5 h-3.5 text-astro-cyan" />
-                Fortschritt
+          {/* Calendar Months Progress in Header (2 Rows) */}
+          <div className="hidden lg:flex flex-col items-center gap-1 w-64 bg-space-900/40 p-2 rounded-xl border border-white/5 backdrop-blur-md">
+            <div className="flex items-center justify-between w-full text-[11px] font-mono px-0.5">
+              <span className="text-slate-400 flex items-center gap-1.5">
+                <CalendarDays className="w-3.5 h-3.5 text-astro-cyan" />
+                <span>Monate</span>
               </span>
-              <span className="text-astro-cyan font-semibold">
-                {votedCount} / {totalPhotos} bewertet ({percentVoted}%)
+              <span className={`font-semibold ${selectedCount === 12 ? 'text-emerald-400' : 'text-astro-cyan'}`}>
+                {selectedCount} / 12 belegt
               </span>
             </div>
-            <div className="w-full h-2 bg-space-800 rounded-full overflow-hidden border border-white/5">
-              <div
-                className="h-full bg-gradient-to-r from-astro-cyan via-astro-blue to-astro-lime rounded-full transition-all duration-500 ease-out"
-                style={{ width: `${percentVoted}%` }}
-              />
-            </div>
+            {renderMonthRow(row1)}
+            {renderMonthRow(row2)}
           </div>
 
           {/* Actions & Voter Badge */}
@@ -150,17 +175,22 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         )}
 
-        {/* Mobile Progress Bar */}
+        {/* Mobile Calendar Months Progress (2 Rows) */}
         <div className="lg:hidden pb-3">
-          <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 mb-1">
-            <span>Fortschritt: {votedCount} von {totalPhotos}</span>
-            <span className="text-astro-cyan">{percentVoted}%</span>
-          </div>
-          <div className="w-full h-1.5 bg-space-800 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-astro-cyan to-astro-lime rounded-full transition-all duration-300"
-              style={{ width: `${percentVoted}%` }}
-            />
+          <div className="bg-space-900/40 p-2.5 rounded-xl border border-white/5">
+            <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 mb-1.5 px-0.5">
+              <span className="flex items-center gap-1.5">
+                <CalendarDays className="w-3.5 h-3.5 text-astro-cyan" />
+                <span>Kalender-Monate</span>
+              </span>
+              <span className={`font-semibold ${selectedCount === 12 ? 'text-emerald-400' : 'text-astro-cyan'}`}>
+                {selectedCount} / 12 belegt
+              </span>
+            </div>
+            <div className="flex flex-col gap-1">
+              {renderMonthRow(row1)}
+              {renderMonthRow(row2)}
+            </div>
           </div>
         </div>
 
