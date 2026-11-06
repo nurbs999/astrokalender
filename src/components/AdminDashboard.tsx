@@ -1,13 +1,15 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Upload, BarChart3, Users, Image as ImageIcon, Trash2, Edit2, Check,
-  Lock, ArrowLeft, AlertCircle, FileCheck, RefreshCw, Sparkles, Key, DownloadCloud, X
+  Lock, ArrowLeft, AlertCircle, FileCheck, RefreshCw, Sparkles, Key, DownloadCloud, X,
+  ShieldCheck, AlertTriangle, FileSpreadsheet, ChevronDown, ChevronUp, Search, ThumbsUp, Calendar,
+  CheckCircle2
 } from 'lucide-react';
-import { Photo, PhotoVoteSummary, VoterStats, MONTH_NAMES, getMonthLabel } from '../types';
+import { Photo, PhotoVoteSummary, VoterStats, DetailedVote, MONTH_NAMES, getMonthLabel } from '../types';
 import { compressImage, CompressionResult, DINA3_MAX_WIDTH, DINA3_MAX_HEIGHT } from '../lib/imageCompressor';
 import {
   uploadPhoto, updatePhoto, deletePhoto, fetchAllVotesSummary,
-  fetchVotersList, seedDemoPhotosToSupabase, isUsingLiveSupabase,
+  fetchVotersList, fetchAllVotesDetailed, seedDemoPhotosToSupabase, isUsingLiveSupabase,
   uploadImageFile, deleteStorageImage
 } from '../lib/api';
 
@@ -46,13 +48,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isSeeding, setIsSeeding] = useState(false);
   const [seedSuccess, setSeedSuccess] = useState('');
 
-  // Tab State: 'ranking' | 'upload' | 'voters' | 'manage'
-  const [activeTab, setActiveTab] = useState<'ranking' | 'upload' | 'voters' | 'manage'>('ranking');
+  // Tab State: 'ranking' | 'votes_audit' | 'voters' | 'upload' | 'manage'
+  const [activeTab, setActiveTab] = useState<'ranking' | 'votes_audit' | 'voters' | 'upload' | 'manage'>('ranking');
 
   // Stats and summaries
   const [summaries, setSummaries] = useState<Record<string, PhotoVoteSummary>>({});
   const [voters, setVoters] = useState<VoterStats[]>([]);
+  const [allDetailedVotes, setAllDetailedVotes] = useState<DetailedVote[]>([]);
   const [loadingStats, setLoadingStats] = useState(false);
+
+  // Votes Audit Search, Filter & Accordion State
+  const [auditSearch, setAuditSearch] = useState('');
+  const [auditMonthFilter, setAuditMonthFilter] = useState<'all' | number>('all');
+  const [auditOnlyWithVotes, setAuditOnlyWithVotes] = useState(false);
+  const [expandedPhotoIds, setExpandedPhotoIds] = useState<Record<string, boolean>>({});
 
   // Upload & Pre-processing state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -81,12 +90,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const loadDashboardData = async () => {
     setLoadingStats(true);
     try {
-      const [sumRes, votersRes] = await Promise.all([
+      const [sumRes, votersRes, detailedVotesRes] = await Promise.all([
         fetchAllVotesSummary(),
         fetchVotersList(),
+        fetchAllVotesDetailed(),
       ]);
       setSummaries(sumRes);
       setVoters(votersRes);
+      setAllDetailedVotes(detailedVotesRes);
     } catch (err) {
       console.error('Error loading dashboard data:', err);
     } finally {
@@ -380,6 +391,156 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return upB - upA;
   });
 
+  // Group detailed votes by photoId
+  const votesByPhoto = useMemo(() => {
+    const map: Record<string, DetailedVote[]> = {};
+    photos.forEach(p => { map[p.id] = []; });
+    allDetailedVotes.forEach(v => {
+      if (!map[v.photo_id]) map[v.photo_id] = [];
+      map[v.photo_id].push(v);
+    });
+    return map;
+  }, [photos, allDetailedVotes]);
+
+  // Duplicate Analysis Report across all photos
+  const duplicateReport = useMemo(() => {
+    const duplicateCases: { photo: Photo; email: string; count: number; votes: DetailedVote[] }[] = [];
+    photos.forEach(photo => {
+      const photoVotes = votesByPhoto[photo.id] || [];
+      const emailMap: Record<string, DetailedVote[]> = {};
+      photoVotes.forEach(v => {
+        const email = v.voter_email.toLowerCase().trim();
+        if (!emailMap[email]) emailMap[email] = [];
+        emailMap[email].push(v);
+      });
+      Object.entries(emailMap).forEach(([email, votesList]) => {
+        if (votesList.length > 1) {
+          duplicateCases.push({ photo, email, count: votesList.length, votes: votesList });
+        }
+      });
+    });
+
+    return {
+      hasDuplicates: duplicateCases.length > 0,
+      totalDuplicates: duplicateCases.length,
+      duplicateCases,
+    };
+  }, [photos, votesByPhoto]);
+
+  // Accordion toggle helpers
+  const togglePhotoExpanded = (photoId: string) => {
+    setExpandedPhotoIds(prev => ({
+      ...prev,
+      [photoId]: prev[photoId] === undefined ? false : !prev[photoId]
+    }));
+  };
+
+  const expandAllPhotos = () => {
+    const all: Record<string, boolean> = {};
+    photos.forEach(p => { all[p.id] = true; });
+    setExpandedPhotoIds(all);
+  };
+
+  const collapseAllPhotos = () => {
+    const all: Record<string, boolean> = {};
+    photos.forEach(p => { all[p.id] = false; });
+    setExpandedPhotoIds(all);
+  };
+
+  // CSV Export for votes audit
+  const handleExportCsv = () => {
+    const headers = [
+      'Foto-ID',
+      'Foto-Titel',
+      'Fotograf',
+      'Wähler-Name',
+      'Wähler-E-Mail',
+      'Bewertung',
+      'Monatsempfehlung',
+      'E-Mail-Status',
+      'Zeitstempel (UTC)'
+    ];
+
+    const rows: string[][] = [];
+    photos.forEach(photo => {
+      const votes = votesByPhoto[photo.id] || [];
+      if (votes.length === 0) {
+        rows.push([
+          photo.id,
+          photo.title,
+          photo.author,
+          '-',
+          '-',
+          'Keine Stimmen',
+          '-',
+          '-',
+          '-'
+        ]);
+      } else {
+        votes.forEach(v => {
+          const monthLabel = v.suggested_month !== null && v.suggested_month !== undefined
+            ? getMonthLabel(v.suggested_month)
+            : 'Keine Präferenz';
+          rows.push([
+            photo.id,
+            photo.title,
+            photo.author,
+            v.voter_name || '-',
+            v.voter_email,
+            v.rating === 'up' ? 'Gefällt mir (👍)' : v.rating === 'down' ? 'Dagegen (👎)' : 'Neutral',
+            monthLabel,
+            v.is_verified ? 'Verifiziert' : 'Unbestätigt',
+            v.updated_at || '-'
+          ]);
+        });
+      }
+    });
+
+    const csvContent = [
+      headers.map(h => `"${h}"`).join(';'),
+      ...rows.map(row => row.map(cell => `"${(cell || '').replace(/"/g, '""')}"`).join(';'))
+    ].join('\r\n');
+
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `astrokalender_stimmen_audit_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // Filtered photos for audit view
+  const filteredAuditPhotos = useMemo(() => {
+    return photos.filter(photo => {
+      const votes = votesByPhoto[photo.id] || [];
+
+      // Only with votes filter
+      if (auditOnlyWithVotes && votes.length === 0) return false;
+
+      // Month filter
+      if (auditMonthFilter !== 'all') {
+        const matchesMonth = votes.some(v => v.suggested_month === auditMonthFilter);
+        if (!matchesMonth) return false;
+      }
+
+      // Search query (photo title, author, voter name, voter email)
+      if (auditSearch.trim()) {
+        const q = auditSearch.toLowerCase().trim();
+        const matchesPhoto = photo.title.toLowerCase().includes(q) || photo.author.toLowerCase().includes(q);
+        const matchesVoter = votes.some(v =>
+          (v.voter_name && v.voter_name.toLowerCase().includes(q)) ||
+          v.voter_email.toLowerCase().includes(q)
+        );
+        if (!matchesPhoto && !matchesVoter) return false;
+      }
+
+      return true;
+    });
+  }, [photos, votesByPhoto, auditOnlyWithVotes, auditMonthFilter, auditSearch]);
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in">
       
@@ -461,7 +622,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           onClick={() => setActiveTab('ranking')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium transition-all ${
             activeTab === 'ranking'
-              ? 'bg-astro-purple text-white shadow-glow-purple'
+              ? 'bg-astro-purple text-white shadow-glow-purple font-semibold'
               : 'bg-space-850 hover:bg-space-800 text-slate-300 border border-white/5'
           }`}
         >
@@ -470,15 +631,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </button>
 
         <button
-          onClick={() => setActiveTab('upload')}
+          onClick={() => setActiveTab('votes_audit')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium transition-all ${
-            activeTab === 'upload'
-              ? 'bg-astro-cyan text-space-950 font-semibold shadow-glow-cyan'
+            activeTab === 'votes_audit'
+              ? 'bg-astro-cyan text-space-950 font-bold shadow-glow-cyan'
               : 'bg-space-850 hover:bg-space-800 text-slate-300 border border-white/5'
           }`}
         >
-          <Upload className="w-4 h-4" />
-          <span>Bild-Upload & Kompression (1080p)</span>
+          <ShieldCheck className="w-4 h-4" />
+          <span>Stimmen pro Bild & Audit ({allDetailedVotes.length})</span>
+          {duplicateReport.hasDuplicates ? (
+            <span className="px-1.5 py-0.2 rounded-full bg-rose-500 text-white font-mono text-[10px] font-bold">
+              !
+            </span>
+          ) : (
+            <span className="px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 font-mono text-[10px]">
+              ✓
+            </span>
+          )}
         </button>
 
         <button
@@ -491,6 +661,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         >
           <Users className="w-4 h-4" />
           <span>Wähler-Liste ({voters.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('upload')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium transition-all ${
+            activeTab === 'upload'
+              ? 'bg-amber-400 text-space-950 font-semibold shadow-sm'
+              : 'bg-space-850 hover:bg-space-800 text-slate-300 border border-white/5'
+          }`}
+        >
+          <Upload className="w-4 h-4" />
+          <span>Bild-Upload & Kompression (DIN A3)</span>
         </button>
 
         <button
@@ -618,6 +800,360 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 );
               })}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: VOTES AUDIT (WER HAT FÜR WELCHE BILDER GESTIMMT) */}
+      {activeTab === 'votes_audit' && (
+        <div className="space-y-6">
+          <div className="bg-space-900/80 border border-white/10 rounded-2xl p-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-white/10">
+              <div>
+                <h2 className="font-display font-semibold text-lg text-white mb-1 flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-astro-cyan" />
+                  Stimmen-Audit: Wer hat für welche Bilder abgestimmt?
+                </h2>
+                <p className="text-xs text-slate-400">
+                  Detaillierte Übersicht aller abgegebenen Stimmen pro Bild mit Wählerangaben, Monatsvorschlägen und automatischer Duplikat-Validierung.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={expandAllPhotos}
+                  className="px-3 py-1.5 rounded-xl bg-space-850 hover:bg-space-800 text-slate-300 hover:text-white border border-white/10 text-xs transition-colors flex items-center gap-1.5"
+                >
+                  <ChevronDown className="w-3.5 h-3.5" />
+                  <span>Alle aufklappen</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={collapseAllPhotos}
+                  className="px-3 py-1.5 rounded-xl bg-space-850 hover:bg-space-800 text-slate-300 hover:text-white border border-white/10 text-xs transition-colors flex items-center gap-1.5"
+                >
+                  <ChevronUp className="w-3.5 h-3.5" />
+                  <span>Alle zuklappen</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportCsv}
+                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-astro-lime text-space-950 font-bold text-xs hover:shadow-glow-lime transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  <span>CSV Exportieren</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Top Metric & Integrity Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 my-6">
+              <div className="p-4 rounded-xl bg-space-950/70 border border-white/10">
+                <div className="text-[11px] font-mono text-slate-400 mb-1">Abgegebene Stimmen</div>
+                <div className="text-2xl font-bold font-mono text-white flex items-center justify-between">
+                  <span>{allDetailedVotes.length}</span>
+                  <ThumbsUp className="w-5 h-5 text-astro-cyan opacity-80" />
+                </div>
+                <div className="text-[10px] text-slate-400 mt-1">Über alle {photos.length} Fotos hinweg</div>
+              </div>
+
+              <div className="p-4 rounded-xl bg-space-950/70 border border-white/10">
+                <div className="text-[11px] font-mono text-slate-400 mb-1">Registrierte Wähler</div>
+                <div className="text-2xl font-bold font-mono text-astro-lime flex items-center justify-between">
+                  <span>{voters.length}</span>
+                  <Users className="w-5 h-5 text-astro-lime opacity-80" />
+                </div>
+                <div className="text-[10px] text-slate-400 mt-1">{voters.filter(v => v.is_verified).length} mit verifizierter E-Mail</div>
+              </div>
+
+              <div className="p-4 rounded-xl bg-space-950/70 border border-white/10">
+                <div className="text-[11px] font-mono text-slate-400 mb-1">Fotos mit Stimmen</div>
+                <div className="text-2xl font-bold font-mono text-astro-purple flex items-center justify-between">
+                  <span>{photos.filter(p => (votesByPhoto[p.id]?.length || 0) > 0).length} / {photos.length}</span>
+                  <ImageIcon className="w-5 h-5 text-astro-purple opacity-80" />
+                </div>
+                <div className="text-[10px] text-slate-400 mt-1">Im Kalender-Voting bewertet</div>
+              </div>
+
+              <div className={`p-4 rounded-xl border ${
+                duplicateReport.hasDuplicates
+                  ? 'bg-rose-500/10 border-rose-500/40 text-rose-300'
+                  : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+              }`}>
+                <div className="text-[11px] font-mono mb-1 flex items-center justify-between">
+                  <span>Duplikat-Prüfung</span>
+                  {duplicateReport.hasDuplicates ? (
+                    <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                  ) : (
+                    <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                  )}
+                </div>
+                <div className="text-sm font-bold flex items-center gap-1.5">
+                  {duplicateReport.hasDuplicates ? (
+                    <span>⚠️ {duplicateReport.totalDuplicates} Duplikat-Fälle!</span>
+                  ) : (
+                    <span>✓ Keine doppelten Stimmen</span>
+                  )}
+                </div>
+                <div className="text-[10px] mt-1 text-slate-300">
+                  {duplicateReport.hasDuplicates
+                    ? 'Achtung: Mehrfache Stimmabgaben für denselben Wähler auf einem Foto gefunden.'
+                    : '100% Einzigartigkeit: Max. 1 Stimme pro Wähler je Foto.'}
+                </div>
+              </div>
+            </div>
+
+            {/* Filter & Search Bar */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 bg-space-950/50 rounded-xl border border-white/10 mb-6">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={auditSearch}
+                  onChange={(e) => setAuditSearch(e.target.value)}
+                  placeholder="Foto-Titel, Fotograf oder Wähler-Name/E-Mail filtern..."
+                  className="w-full pl-9 pr-4 py-2 rounded-lg bg-space-850 border border-white/10 text-white placeholder-slate-500 text-xs focus:outline-none focus:border-astro-cyan"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={auditMonthFilter}
+                  onChange={(e) => setAuditMonthFilter(e.target.value === 'all' ? 'all' : parseInt(e.target.value, 10))}
+                  className="bg-space-850 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-astro-cyan cursor-pointer"
+                >
+                  <option value="all">Alle Monate / Deckblatt</option>
+                  <option value={0}>📖 Nur Deckblatt</option>
+                  {MONTH_NAMES.map((name, i) => (
+                    <option key={i + 1} value={i + 1}>📅 Nur {name}</option>
+                  ))}
+                </select>
+
+                <button
+                  type="button"
+                  onClick={() => setAuditOnlyWithVotes(prev => !prev)}
+                  className={`px-3 py-2 rounded-lg text-xs font-mono border transition-colors flex items-center gap-1.5 cursor-pointer ${
+                    auditOnlyWithVotes
+                      ? 'bg-astro-cyan/20 border-astro-cyan text-astro-cyan font-semibold'
+                      : 'bg-space-850 border-white/10 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <span>Nur mit Stimmen</span>
+                </button>
+              </div>
+            </div>
+
+            {/* List of Photos with Votes */}
+            <div className="space-y-4">
+              {filteredAuditPhotos.length === 0 ? (
+                <div className="py-12 text-center text-slate-400 text-xs">
+                  Keine Fotos entsprechen den aktuellen Filtern.
+                </div>
+              ) : (
+                filteredAuditPhotos.map((photo, photoIdx) => {
+                  const votes = votesByPhoto[photo.id] || [];
+                  const isExpanded = expandedPhotoIds[photo.id] ?? true;
+
+                  // Check duplicates on this specific photo
+                  const emailCountMap: Record<string, number> = {};
+                  votes.forEach(v => {
+                    const e = v.voter_email.toLowerCase().trim();
+                    emailCountMap[e] = (emailCountMap[e] || 0) + 1;
+                  });
+                  const photoHasDuplicate = Object.values(emailCountMap).some(count => count > 1);
+
+                  // Month summaries for this photo
+                  const photoMonthCounts: Record<number, number> = {};
+                  votes.forEach(v => {
+                    if (v.suggested_month !== null && v.suggested_month !== undefined) {
+                      photoMonthCounts[v.suggested_month] = (photoMonthCounts[v.suggested_month] || 0) + 1;
+                    }
+                  });
+
+                  return (
+                    <div
+                      key={photo.id}
+                      className={`rounded-2xl border transition-all overflow-hidden ${
+                        photoHasDuplicate
+                          ? 'bg-rose-950/20 border-rose-500/50 shadow-lg'
+                          : 'bg-space-850/70 border-white/10 hover:border-white/20'
+                      }`}
+                    >
+                      {/* Photo Header Bar */}
+                      <div
+                        onClick={() => togglePhotoExpanded(photo.id)}
+                        className="p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 cursor-pointer select-none bg-space-900/50 hover:bg-space-900 transition-colors"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-8 h-8 rounded-lg bg-space-950 flex items-center justify-center font-mono font-bold text-xs text-slate-400 shrink-0 border border-white/10">
+                            #{photoIdx + 1}
+                          </div>
+                          <img
+                            src={photo.image_url}
+                            alt={photo.title}
+                            className="w-16 h-11 object-contain rounded-lg bg-space-950 border border-white/10 shrink-0"
+                          />
+                          <div className="truncate min-w-0">
+                            <h3 className="font-semibold text-sm text-white truncate">{photo.title}</h3>
+                            <p className="text-xs text-slate-400 truncate">Fotograf: {photo.author}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2.5 shrink-0 self-end sm:self-center">
+                          {/* Month breakdown tags */}
+                          <div className="hidden lg:flex items-center gap-1 text-[10px] font-mono">
+                            {Object.entries(photoMonthCounts).map(([mStr, count]) => {
+                              const m = parseInt(mStr, 10);
+                              return (
+                                <span
+                                  key={m}
+                                  className={`px-1.5 py-0.5 rounded border ${
+                                    m === 0
+                                      ? 'bg-amber-400/15 border-amber-400/30 text-amber-300'
+                                      : 'bg-astro-cyan/10 border-astro-cyan/20 text-astro-cyan'
+                                  }`}
+                                >
+                                  {count}x {m === 0 ? 'Deckblatt' : MONTH_NAMES[m - 1]}
+                                </span>
+                              );
+                            })}
+                          </div>
+
+                          {/* Vote count pill */}
+                          <span className={`px-2.5 py-1 rounded-xl text-xs font-mono font-semibold flex items-center gap-1.5 ${
+                            votes.length > 0
+                              ? 'bg-astro-cyan/15 text-astro-cyan border border-astro-cyan/30'
+                              : 'bg-space-950 text-slate-500 border border-white/5'
+                          }`}>
+                            <ThumbsUp className="w-3 h-3" />
+                            <span>{votes.length} {votes.length === 1 ? 'Stimme' : 'Stimmen'}</span>
+                          </span>
+
+                          {/* Duplicate badge for this photo */}
+                          {photoHasDuplicate ? (
+                            <span className="px-2.5 py-1 rounded-xl text-xs font-mono bg-rose-500/20 text-rose-300 border border-rose-500/40 flex items-center gap-1">
+                              <AlertTriangle className="w-3 h-3 text-rose-400" />
+                              <span>Doppelte Stimme erkannt!</span>
+                            </span>
+                          ) : votes.length > 0 ? (
+                            <span className="px-2 py-1 rounded-xl text-[11px] font-mono bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 hidden md:inline-flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                              <span>Keine Duplikate ({votes.length} eindeutige Wähler)</span>
+                            </span>
+                          ) : null}
+
+                          {/* Accordion Chevron */}
+                          <div className="p-1 rounded-lg text-slate-400 hover:text-white">
+                            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Expandable Voter Table */}
+                      {isExpanded && (
+                        <div className="border-t border-white/10 p-4 bg-space-950/60">
+                          {votes.length === 0 ? (
+                            <p className="text-slate-500 text-xs py-3 text-center italic">
+                              Bisher wurden noch keine Stimmen für dieses Foto abgegeben.
+                            </p>
+                          ) : (
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-left text-xs">
+                                <thead>
+                                  <tr className="border-b border-white/10 text-slate-400 font-mono text-[11px]">
+                                    <th className="py-2.5 px-3">Wähler</th>
+                                    <th className="py-2.5 px-3">E-Mail</th>
+                                    <th className="py-2.5 px-3">E-Mail Status</th>
+                                    <th className="py-2.5 px-3">Bewertung</th>
+                                    <th className="py-2.5 px-3">Monatsempfehlung</th>
+                                    <th className="py-2.5 px-3">Stimmabgabe am</th>
+                                    <th className="py-2.5 px-3 text-right">Integrität</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-white/5">
+                                  {votes.map((vote, vIdx) => {
+                                    const emailKey = vote.voter_email.toLowerCase().trim();
+                                    const isDuplicateVote = emailCountMap[emailKey] > 1;
+
+                                    return (
+                                      <tr
+                                        key={vote.id || `${vote.photo_id}-${vote.voter_email}-${vIdx}`}
+                                        className={`transition-colors ${
+                                          isDuplicateVote
+                                            ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-200'
+                                            : 'hover:bg-white/5'
+                                        }`}
+                                      >
+                                        <td className="py-2.5 px-3 font-medium text-slate-200">
+                                          {vote.voter_name || 'Anonym'}
+                                        </td>
+                                        <td className="py-2.5 px-3 font-mono text-astro-cyan text-[11px]">
+                                          {vote.voter_email}
+                                        </td>
+                                        <td className="py-2.5 px-3">
+                                          {vote.is_verified ? (
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-mono border border-emerald-500/30">
+                                              ✓ Verifiziert
+                                            </span>
+                                          ) : (
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-mono border border-amber-500/30">
+                                              ⏳ Unbestätigt
+                                            </span>
+                                          )}
+                                        </td>
+                                        <td className="py-2.5 px-3">
+                                          {vote.rating === 'up' ? (
+                                            <span className="inline-flex items-center gap-1 text-emerald-400 font-semibold font-mono">
+                                              <ThumbsUp className="w-3 h-3 fill-emerald-400" />
+                                              <span>Gefällt mir</span>
+                                            </span>
+                                          ) : (
+                                            <span className="text-slate-500 font-mono">–</span>
+                                          )}
+                                        </td>
+                                        <td className="py-2.5 px-3 font-mono">
+                                          {vote.suggested_month === 0 ? (
+                                            <span className="px-2 py-0.5 rounded-lg bg-amber-400/20 text-amber-300 border border-amber-400/30 font-semibold">
+                                              📖 Deckblatt
+                                            </span>
+                                          ) : vote.suggested_month && vote.suggested_month >= 1 && vote.suggested_month <= 12 ? (
+                                            <span className="px-2 py-0.5 rounded-lg bg-astro-cyan/15 text-astro-cyan border border-astro-cyan/30">
+                                              📅 {getMonthLabel(vote.suggested_month)}
+                                            </span>
+                                          ) : (
+                                            <span className="text-slate-500">– Keine</span>
+                                          )}
+                                        </td>
+                                        <td className="py-2.5 px-3 text-slate-400 font-mono text-[11px]">
+                                          {vote.updated_at ? new Date(vote.updated_at).toLocaleString('de-DE') : '–'}
+                                        </td>
+                                        <td className="py-2.5 px-3 text-right">
+                                          {isDuplicateVote ? (
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-500 text-white font-mono text-[10px] font-bold animate-pulse">
+                                              ⚠️ Duplikat!
+                                            </span>
+                                          ) : (
+                                            <span className="text-emerald-400 font-mono text-[10px]">
+                                              ✓ 1 Stimme
+                                            </span>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
           </div>
         </div>
       )}

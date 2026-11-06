@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { Photo, Vote, Voter, PhotoVoteSummary, VoterStats, Rating } from '../types';
+import { Photo, Vote, Voter, PhotoVoteSummary, VoterStats, Rating, DetailedVote } from '../types';
 import { INITIAL_PHOTOS } from './mockData';
 
 // Local storage keys
@@ -761,6 +761,45 @@ export async function fetchVotersList(): Promise<VoterStats[]> {
       is_verified: !!v.is_verified,
       votesCount: stats.count,
       lastActive: stats.lastActive || v.created_at || 'Unbekannt'
+    };
+  });
+}
+
+export async function fetchAllVotesDetailed(): Promise<DetailedVote[]> {
+  const client = getSupabaseClient();
+  let voters: Voter[] = [];
+  let votes: Vote[] = [];
+
+  if (client) {
+    try {
+      const [votersRes, votesRes] = await Promise.all([
+        client.from('voters').select('*'),
+        client.from('votes').select('*').order('updated_at', { ascending: false })
+      ]);
+
+      if (!votersRes.error && votersRes.data) voters = votersRes.data as Voter[];
+      if (!votesRes.error && votesRes.data) votes = votesRes.data as Vote[];
+    } catch (err) {
+      console.warn('Error fetching detailed votes from Supabase:', err);
+      voters = getLocalVoters();
+      votes = getLocalVotes();
+    }
+  } else {
+    voters = getLocalVoters();
+    votes = getLocalVotes();
+  }
+
+  const voterMap = new Map<string, Voter>();
+  voters.forEach(v => {
+    voterMap.set(v.email.toLowerCase().trim(), v);
+  });
+
+  return votes.map(vote => {
+    const voter = voterMap.get(vote.voter_email.toLowerCase().trim());
+    return {
+      ...vote,
+      voter_name: voter?.name || vote.voter_email.split('@')[0],
+      is_verified: voter?.is_verified ?? false
     };
   });
 }

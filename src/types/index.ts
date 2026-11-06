@@ -30,6 +30,11 @@ export interface Vote {
   updated_at?: string;
 }
 
+export interface DetailedVote extends Vote {
+  voter_name?: string;
+  is_verified?: boolean;
+}
+
 export interface PhotoVoteSummary {
   photo_id: string;
   upvotes: number;
