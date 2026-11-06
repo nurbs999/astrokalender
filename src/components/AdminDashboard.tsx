@@ -3,7 +3,7 @@ import {
   Upload, BarChart3, Users, Image as ImageIcon, Trash2, Edit2, Check,
   Lock, ArrowLeft, AlertCircle, FileCheck, RefreshCw, Sparkles, Key, DownloadCloud, X
 } from 'lucide-react';
-import { Photo, PhotoVoteSummary, VoterStats, MONTH_NAMES } from '../types';
+import { Photo, PhotoVoteSummary, VoterStats, MONTH_NAMES, getMonthLabel } from '../types';
 import { compressImage, CompressionResult, DINA3_MAX_WIDTH, DINA3_MAX_HEIGHT } from '../lib/imageCompressor';
 import {
   uploadPhoto, updatePhoto, deletePhoto, fetchAllVotesSummary,
@@ -568,19 +568,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     {/* Right: Month Distribution Bars */}
                     <div className="w-full lg:max-w-md bg-space-950/70 p-3 rounded-xl border border-white/5">
                       <div className="flex items-center justify-between text-xs mb-2">
-                        <span className="font-mono text-slate-400">Monatsempfehlungen:</span>
+                        <span className="font-mono text-slate-400">Monats-/Deckblatt-Empfehlung:</span>
                         {s.topMonth ? (
                           <span className="text-astro-cyan font-semibold">
-                            🏆 {s.topMonth.percentage}% empfehlen {MONTH_NAMES[s.topMonth.month - 1]}
+                            🏆 {s.topMonth.percentage}% empfehlen {getMonthLabel(s.topMonth.month)}
                           </span>
                         ) : (
                           <span className="text-slate-500">Keine Monate vorgeschlagen</span>
                         )}
                       </div>
 
-                      {/* Mini Bar Chart for 12 Months */}
-                      <div className="grid grid-cols-12 gap-1 h-8 items-end">
-                        {Array.from({ length: 12 }, (_, i) => i + 1).map((monthNum) => {
+                      {/* Mini Bar Chart for Deckblatt (0) + 12 Months (1..12) */}
+                      <div className="flex gap-1 h-8 items-end">
+                        {Array.from({ length: 13 }, (_, i) => i).map((monthNum) => {
                           const count = s.monthCounts[monthNum] || 0;
                           const heightPct = totalMonthVotes > 0 ? (count / totalMonthVotes) * 100 : 0;
                           const isTop = s.topMonth?.month === monthNum;
@@ -588,7 +588,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           return (
                             <div
                               key={monthNum}
-                              className="group/month relative flex flex-col items-center h-full justify-end"
+                              className="group/month relative flex-1 flex flex-col items-center h-full justify-end"
                             >
                               <div
                                 style={{ height: `${Math.max(heightPct > 0 ? 15 : 4, heightPct)}%` }}
@@ -600,13 +600,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                     : 'bg-slate-600 hover:bg-slate-500'
                                 }`}
                               />
-                              <span className="text-[9px] font-mono text-slate-500 mt-1">
-                                {monthNum}
+                              <span className={`text-[9px] font-mono mt-1 ${monthNum === 0 ? 'text-amber-400 font-bold' : 'text-slate-500'}`}>
+                                {monthNum === 0 ? 'D' : monthNum}
                               </span>
 
                               {/* Tooltip */}
                               <div className="absolute -top-7 left-1/2 -translate-x-1/2 opacity-0 group-hover/month:opacity-100 transition-opacity bg-space-900 border border-white/20 text-[10px] text-white px-1.5 py-0.5 rounded shadow pointer-events-none whitespace-nowrap z-20">
-                                {MONTH_NAMES[monthNum - 1]}: {count} Stimmen ({Math.round(heightPct)}%)
+                                {getMonthLabel(monthNum)}: {count} Stimmen ({Math.round(heightPct)}%)
                               </div>
                             </div>
                           );

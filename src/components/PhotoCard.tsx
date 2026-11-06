@@ -1,6 +1,6 @@
 import React from 'react';
 import { ThumbsUp, Calendar, Maximize2, Camera, Clock, CheckCircle } from 'lucide-react';
-import { Photo, Vote, PhotoVoteSummary, Rating, MONTH_NAMES } from '../types';
+import { Photo, Vote, PhotoVoteSummary, Rating, MONTH_NAMES, getMonthLabel } from '../types';
 
 interface PhotoCardProps {
   photo: Photo;
@@ -159,6 +159,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
                 className="w-full appearance-none bg-space-850 hover:bg-space-800 border border-white/10 focus:border-astro-cyan rounded-xl py-2 pl-3 pr-8 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-astro-cyan transition-colors cursor-pointer"
               >
                 <option value="">Keine Präferenz / Nicht festgelegt</option>
+                <option value={0}>📖 Deckblatt (Titelbild)</option>
                 {MONTH_NAMES.map((name, i) => (
                   <option key={i + 1} value={i + 1}>
                     {i + 1}. {name} {i === 0 || i === 11 ? '❄️' : i >= 2 && i <= 4 ? '🌱' : i >= 5 && i <= 7 ? '☀️' : '🍂'}
@@ -177,7 +178,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
               <p className="text-[10px] text-astro-cyan/90 font-mono mt-1.5 flex items-center justify-between">
                 <span>Community-Tipp:</span>
                 <span className="font-semibold text-slate-300">
-                  {summary.topMonth.percentage}% empfehlen {MONTH_NAMES[summary.topMonth.month - 1]}
+                  {summary.topMonth.percentage}% empfehlen {getMonthLabel(summary.topMonth.month)}
                 </span>
               </p>
             )}

@@ -11,24 +11,22 @@ interface NavbarProps {
   onOpenVoterModal: () => void;
   onOpenSupabaseModal: () => void;
   onOpenVerificationModal: () => void;
+  onOpenCalendarModal: () => void;
   onLogout: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   currentVoter,
-  totalPhotos,
-  votedCount,
   selectedMonths,
-  isSupabaseLive,
   onOpenVoterModal,
-  onOpenSupabaseModal,
   onOpenVerificationModal,
+  onOpenCalendarModal,
   onLogout,
 }) => {
-  const percentVoted = totalPhotos > 0 ? Math.round((votedCount / totalPhotos) * 100) : 0;
   const row1 = [1, 2, 3, 4, 5, 6];
   const row2 = [7, 8, 9, 10, 11, 12];
-  const selectedCount = selectedMonths.length;
+  const hasCover = selectedMonths.includes(0);
+  const selectedCount = selectedMonths.filter((m) => m >= 1 && m <= 12).length;
 
   const renderMonthRow = (months: number[]) => (
     <div className="grid grid-cols-6 gap-1 w-full">
@@ -80,20 +78,34 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           </div>
 
-          {/* Calendar Months Progress in Header (2 Rows) */}
-          <div className="hidden lg:flex flex-col items-center gap-1 w-64 bg-space-900/40 p-2 rounded-xl border border-white/5 backdrop-blur-md">
+          {/* Calendar Months Progress in Header (2 Rows, clickable for Preview Modal) */}
+          <button
+            type="button"
+            onClick={onOpenCalendarModal}
+            title="Klicken, um die Kalender-Vorschau (Deckblatt & 12 Monate) zu öffnen"
+            className="hidden lg:flex flex-col items-center gap-1 w-72 bg-space-900/40 hover:bg-space-900/80 p-2 rounded-xl border border-white/10 hover:border-astro-cyan/50 backdrop-blur-md transition-all cursor-pointer group"
+          >
             <div className="flex items-center justify-between w-full text-[11px] font-mono px-0.5">
-              <span className="text-slate-400 flex items-center gap-1.5">
+              <span className="text-slate-300 group-hover:text-astro-cyan flex items-center gap-1.5 transition-colors">
                 <CalendarDays className="w-3.5 h-3.5 text-astro-cyan" />
-                <span>Monate</span>
+                <span>Vorschau</span>
+              </span>
+              <span
+                className={`px-1.5 py-0.2 rounded text-[10px] border transition-all ${
+                  hasCover
+                    ? 'bg-amber-400/20 border-amber-400 text-amber-300 font-bold shadow-sm'
+                    : 'bg-space-900/60 border-white/5 text-slate-500'
+                }`}
+              >
+                Deckblatt
               </span>
               <span className={`font-semibold ${selectedCount === 12 ? 'text-emerald-400' : 'text-astro-cyan'}`}>
-                {selectedCount} / 12 belegt
+                {selectedCount} / 12
               </span>
             </div>
             {renderMonthRow(row1)}
             {renderMonthRow(row2)}
-          </div>
+          </button>
 
           {/* Actions & Voter Badge */}
           <div className="flex items-center gap-2 sm:gap-3">
@@ -175,23 +187,38 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         )}
 
-        {/* Mobile Calendar Months Progress (2 Rows) */}
+        {/* Mobile Calendar Months Progress (2 Rows, clickable for Preview Modal) */}
         <div className="lg:hidden pb-3">
-          <div className="bg-space-900/40 p-2.5 rounded-xl border border-white/5">
+          <button
+            type="button"
+            onClick={onOpenCalendarModal}
+            className="w-full bg-space-900/40 hover:bg-space-900/70 p-2.5 rounded-xl border border-white/10 hover:border-astro-cyan/40 transition-all text-left"
+          >
             <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 mb-1.5 px-0.5">
-              <span className="flex items-center gap-1.5">
+              <span className="flex items-center gap-1.5 text-slate-300">
                 <CalendarDays className="w-3.5 h-3.5 text-astro-cyan" />
-                <span>Kalender-Monate</span>
+                <span>Kalender-Vorschau öffnen</span>
               </span>
-              <span className={`font-semibold ${selectedCount === 12 ? 'text-emerald-400' : 'text-astro-cyan'}`}>
-                {selectedCount} / 12 belegt
-              </span>
+              <div className="flex items-center gap-2">
+                <span
+                  className={`px-1.5 py-0.5 rounded text-[10px] border transition-all ${
+                    hasCover
+                      ? 'bg-amber-400/20 border-amber-400 text-amber-300 font-bold'
+                      : 'bg-space-900/60 border-white/5 text-slate-500'
+                  }`}
+                >
+                  Deckblatt
+                </span>
+                <span className={`font-semibold ${selectedCount === 12 ? 'text-emerald-400' : 'text-astro-cyan'}`}>
+                  {selectedCount} / 12
+                </span>
+              </div>
             </div>
             <div className="flex flex-col gap-1">
               {renderMonthRow(row1)}
               {renderMonthRow(row2)}
             </div>
-          </div>
+          </button>
         </div>
 
       </div>

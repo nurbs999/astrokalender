@@ -26,7 +26,7 @@ export interface Vote {
   photo_id: string;
   voter_email: string;
   rating: Rating;
-  suggested_month: number | null; // 1 to 12 or null
+  suggested_month: number | null; // 0 = Deckblatt, 1 to 12 = Jan-Dez, or null
   updated_at?: string;
 }
 
@@ -36,7 +36,7 @@ export interface PhotoVoteSummary {
   downvotes: number;
   netVotes: number;
   totalVotes: number;
-  monthCounts: Record<number, number>; // 1-12 -> count
+  monthCounts: Record<number, number>; // 0-12 -> count
   topMonth: {
     month: number;
     percentage: number;
@@ -61,3 +61,13 @@ export const MONTH_SHORT_NAMES = [
   'Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun',
   'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'
 ];
+
+export function getMonthLabel(monthNum: number): string {
+  if (monthNum === 0) return 'Deckblatt';
+  return MONTH_NAMES[monthNum - 1] || `Monat ${monthNum}`;
+}
+
+export function getMonthShortLabel(monthNum: number): string {
+  if (monthNum === 0) return 'Deckbl.';
+  return MONTH_SHORT_NAMES[monthNum - 1] || `${monthNum}`;
+}

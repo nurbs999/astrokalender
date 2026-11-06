@@ -684,7 +684,7 @@ export async function fetchAllVotesSummary(): Promise<Record<string, PhotoVoteSu
     s.netVotes = s.upvotes - s.downvotes;
     s.totalVotes++;
 
-    if (vote.suggested_month && vote.suggested_month >= 1 && vote.suggested_month <= 12) {
+    if (vote.suggested_month !== null && vote.suggested_month !== undefined && vote.suggested_month >= 0 && vote.suggested_month <= 12) {
       s.monthCounts[vote.suggested_month] = (s.monthCounts[vote.suggested_month] || 0) + 1;
     }
   });

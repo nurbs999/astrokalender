@@ -16,6 +16,7 @@ import { VoterModal } from './components/VoterModal';
 import { EmailVerificationModal } from './components/EmailVerificationModal';
 import { AdminDashboard } from './components/AdminDashboard';
 import { SupabaseConfigModal } from './components/SupabaseConfigModal';
+import { CalendarPreviewModal } from './components/CalendarPreviewModal';
 import { ToastContainer, ToastMessage } from './components/Toast';
 
 const LS_CURRENT_VOTER = 'astrovote_current_voter_v1';
@@ -46,6 +47,7 @@ export function App() {
   const [isVoterModalOpen, setIsVoterModalOpen] = useState(false);
   const [isVerificationModalOpen, setIsVerificationModalOpen] = useState(false);
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
+  const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
   const [activeLightboxPhoto, setActiveLightboxPhoto] = useState<Photo | null>(null);
   const [pendingVote, setPendingVote] = useState<{ photoId: string; rating: Rating; month: number | null } | null>(null);
 
@@ -259,7 +261,7 @@ export function App() {
       if (rating === 'up') {
         addToast(`👍 Stimme für "${photoTitle}" gespeichert!`);
       } else if (month !== null) {
-        addToast(`📅 Monat für "${photoTitle}" gespeichert.`);
+        addToast(month === 0 ? `📖 "${photoTitle}" als Deckblatt vorgeschlagen.` : `📅 Monat für "${photoTitle}" gespeichert.`);
       } else {
         addToast(`Stimme für "${photoTitle}" zurückgenommen.`);
       }
@@ -276,12 +278,13 @@ export function App() {
         ...userVotes,
         [photoId]: { rating, suggested_month: month }
       }).forEach(v => {
-        if (v.suggested_month && v.suggested_month >= 1 && v.suggested_month <= 12) {
+        if (v.suggested_month !== null && v.suggested_month !== undefined && v.suggested_month >= 1 && v.suggested_month <= 12) {
           allMonthsAfter.add(v.suggested_month);
         }
       });
 
-      if (allMonthsAfter.size === 12 && selectedMonths.length < 12) {
+      const prevTwelveCount = selectedMonths.filter(m => m >= 1 && m <= 12).length;
+      if (allMonthsAfter.size === 12 && prevTwelveCount < 12) {
         confetti({
           particleCount: 120,
           spread: 80,
@@ -416,11 +419,11 @@ export function App() {
     v => v.rating !== 'none' || v.suggested_month !== null
   ).length;
 
-  // Set of months (1..12) that have at least one photo assigned by the current voter
+  // Set of slots (0 = Deckblatt, 1..12 = Months) that have at least one photo assigned by the current voter
   const selectedMonths = useMemo(() => {
     const set = new Set<number>();
     Object.values(userVotes).forEach(v => {
-      if (v.suggested_month && v.suggested_month >= 1 && v.suggested_month <= 12) {
+      if (v.suggested_month !== null && v.suggested_month !== undefined && v.suggested_month >= 0 && v.suggested_month <= 12) {
         set.add(v.suggested_month);
       }
     });
@@ -440,6 +443,7 @@ export function App() {
         onOpenVoterModal={() => setIsVoterModalOpen(true)}
         onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
         onOpenVerificationModal={() => setIsVerificationModalOpen(true)}
+        onOpenCalendarModal={() => setIsCalendarModalOpen(true)}
         onLogout={handleLogout}
       />
 
@@ -635,6 +639,16 @@ export function App() {
           </div>
         </div>
       </footer>
+
+      {/* Calendar 3x4 + Cover Preview Modal */}
+      <CalendarPreviewModal
+        isOpen={isCalendarModalOpen}
+        photos={photos}
+        userVotes={userVotes}
+        summaries={summaries}
+        onClose={() => setIsCalendarModalOpen(false)}
+        onOpenLightbox={(p) => setActiveLightboxPhoto(p)}
+      />
 
       {/* Lightbox Modal */}
       <Lightbox

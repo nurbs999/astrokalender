@@ -157,6 +157,7 @@ export const Lightbox: React.FC<LightboxProps> = ({
                 className="bg-space-850 hover:bg-space-800 border border-white/10 rounded-xl py-2 px-3 text-xs text-slate-200 focus:outline-none focus:border-astro-cyan transition-colors"
               >
                 <option value="">Monat: Keine Präferenz</option>
+                <option value={0}>📖 Deckblatt (Titelbild)</option>
                 {MONTH_NAMES.map((name, i) => (
                   <option key={i + 1} value={i + 1}>
                     {i + 1}. {name}

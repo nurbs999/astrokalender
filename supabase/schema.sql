@@ -35,16 +35,20 @@ ALTER TABLE public.voters ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT f
 ALTER TABLE public.voters ADD COLUMN IF NOT EXISTS verification_code TEXT;
 ALTER TABLE public.voters ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;
 
--- Tabelle: Stimmen (Votes)
+-- Tabelle: Stimmen (Votes) - suggested_month: 0 = Deckblatt, 1..12 = Januar..Dezember
 CREATE TABLE IF NOT EXISTS public.votes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     photo_id UUID NOT NULL REFERENCES public.photos(id) ON DELETE CASCADE,
     voter_email TEXT NOT NULL REFERENCES public.voters(email) ON UPDATE CASCADE ON DELETE CASCADE,
     rating TEXT NOT NULL CHECK (rating IN ('up', 'down', 'none')),
-    suggested_month INTEGER CHECK (suggested_month IS NULL OR (suggested_month >= 1 AND suggested_month <= 12)),
+    suggested_month INTEGER CHECK (suggested_month IS NULL OR (suggested_month >= 0 AND suggested_month <= 12)),
     updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
     CONSTRAINT unique_photo_voter UNIQUE (photo_id, voter_email)
 );
+
+-- Falls Tabelle votes bereits mit altem Constraint (1..12) existiert, auf 0..12 (inkl. Deckblatt = 0) erweitern:
+ALTER TABLE public.votes DROP CONSTRAINT IF EXISTS votes_suggested_month_check;
+ALTER TABLE public.votes ADD CONSTRAINT votes_suggested_month_check CHECK (suggested_month IS NULL OR (suggested_month >= 0 AND suggested_month <= 12));
 
 -- Indizes für schnelle Abfragen
 CREATE INDEX IF NOT EXISTS idx_votes_photo_id ON public.votes(photo_id);
