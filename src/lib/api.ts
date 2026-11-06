@@ -664,13 +664,10 @@ export async function fetchAllVotesSummary(): Promise<Record<string, PhotoVoteSu
     });
   }
 
-  // Only votes from VERIFIED email addresses count towards calendar statistics
-  const validVotes = allVotes.filter(v => verifiedEmails.has(v.voter_email.toLowerCase()));
-
-  // Aggregate valid votes per photo
+  // Aggregate all global votes per photo (so community tips and rankings reflect all votes)
   const summary: Record<string, PhotoVoteSummary> = {};
 
-  validVotes.forEach(vote => {
+  allVotes.forEach(vote => {
     if (!summary[vote.photo_id]) {
       summary[vote.photo_id] = {
         photo_id: vote.photo_id,

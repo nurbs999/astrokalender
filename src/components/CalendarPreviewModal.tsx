@@ -25,12 +25,21 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
 
   useEffect(() => {
     if (!isOpen) return;
+
+    // Falls der Nutzer noch keine eigenen Monatsauswahlen getroffen hat, direkt Community-Favoriten anzeigen
+    const hasPersonalVotes = Object.values(userVotes).some(
+      (v) => v.suggested_month !== null && v.suggested_month !== undefined
+    );
+    if (!hasPersonalVotes) {
+      setViewMode('community');
+    }
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, userVotes]);
 
   // Map slots 0..12 -> Photo[] for personal selection vs community top picks
   const slotPhotosMap = useMemo(() => {

@@ -283,8 +283,10 @@ export function App() {
         }
       });
 
-      const prevTwelveCount = selectedMonths.filter(m => m >= 1 && m <= 12).length;
-      if (allMonthsAfter.size === 12 && prevTwelveCount < 12) {
+      const prevUserTwelveCount = Object.values(userVotes).filter(
+        v => v.suggested_month !== null && v.suggested_month !== undefined && v.suggested_month >= 1 && v.suggested_month <= 12
+      ).length;
+      if (allMonthsAfter.size === 12 && prevUserTwelveCount < 12) {
         confetti({
           particleCount: 120,
           spread: 80,
@@ -420,16 +422,23 @@ export function App() {
     v => v.rating !== 'none' || v.suggested_month !== null
   ).length;
 
-  // Set of slots (0 = Deckblatt, 1..12 = Months) that have at least one photo assigned by the current voter
-  const selectedMonths = useMemo(() => {
+  // Set of slots (0 = Deckblatt, 1..12 = Months) that have at least one vote globally across all photos
+  const globalVotedMonths = useMemo(() => {
     const set = new Set<number>();
-    Object.values(userVotes).forEach(v => {
-      if (v.suggested_month !== null && v.suggested_month !== undefined && v.suggested_month >= 0 && v.suggested_month <= 12) {
-        set.add(v.suggested_month);
+    Object.values(summaries).forEach(s => {
+      if (s.monthCounts) {
+        Object.entries(s.monthCounts).forEach(([mStr, count]) => {
+          if (count > 0) {
+            const m = parseInt(mStr, 10);
+            if (m >= 0 && m <= 12) {
+              set.add(m);
+            }
+          }
+        });
       }
     });
     return Array.from(set);
-  }, [userVotes]);
+  }, [summaries]);
 
   return (
     <div className="min-h-screen flex flex-col bg-space-950 text-slate-100 selection:bg-astro-cyan/30">
@@ -439,7 +448,7 @@ export function App() {
         currentVoter={currentVoter}
         totalPhotos={photos.length}
         votedCount={votedCount}
-        selectedMonths={selectedMonths}
+        selectedMonths={globalVotedMonths}
         isSupabaseLive={isUsingLiveSupabase()}
         onOpenVoterModal={() => setIsVoterModalOpen(true)}
         onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
@@ -656,6 +665,7 @@ export function App() {
         photo={activeLightboxPhoto}
         photos={photos}
         userVote={activeLightboxPhoto ? userVotes[activeLightboxPhoto.id] : undefined}
+        summary={activeLightboxPhoto ? summaries[activeLightboxPhoto.id] : undefined}
         onClose={() => setActiveLightboxPhoto(null)}
         onNavigate={handleLightboxNavigate}
         onVote={handleVote}

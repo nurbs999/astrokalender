@@ -1,11 +1,12 @@
 import React, { useEffect } from 'react';
 import { X, ChevronLeft, ChevronRight, ThumbsUp, Calendar, Camera, Clock, User } from 'lucide-react';
-import { Photo, Vote, Rating, MONTH_NAMES } from '../types';
+import { Photo, Vote, Rating, PhotoVoteSummary, MONTH_NAMES, getMonthLabel } from '../types';
 
 interface LightboxProps {
   photo: Photo | null;
   photos: Photo[];
   userVote?: Vote;
+  summary?: PhotoVoteSummary;
   onClose: () => void;
   onNavigate: (direction: 'prev' | 'next') => void;
   onVote: (photoId: string, rating: Rating, month: number | null) => void;
@@ -15,6 +16,7 @@ export const Lightbox: React.FC<LightboxProps> = ({
   photo,
   photos,
   userVote,
+  summary,
   onClose,
   onNavigate,
   onVote,
@@ -154,7 +156,7 @@ export const Lightbox: React.FC<LightboxProps> = ({
               <select
                 value={currentMonth !== null ? currentMonth : ''}
                 onChange={handleMonth}
-                className="bg-space-850 hover:bg-space-800 border border-white/10 rounded-xl py-2 px-3 text-xs text-slate-200 focus:outline-none focus:border-astro-cyan transition-colors"
+                className="bg-space-850 hover:bg-space-800 border border-white/10 rounded-xl py-2 px-3 text-xs text-slate-200 focus:outline-none focus:border-astro-cyan transition-colors cursor-pointer"
               >
                 <option value="">Monat: Keine Präferenz</option>
                 <option value={0}>📖 Deckblatt (Titelbild)</option>
@@ -165,6 +167,16 @@ export const Lightbox: React.FC<LightboxProps> = ({
                 ))}
               </select>
             </div>
+
+            {/* Community Tip in Lightbox */}
+            {summary?.topMonth && (
+              <div className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-astro-cyan/10 border border-astro-cyan/25 text-xs text-astro-cyan font-mono">
+                <span>Community-Tipp:</span>
+                <span className="font-semibold text-white">
+                  {summary.topMonth.percentage}% empfehlen {getMonthLabel(summary.topMonth.month)}
+                </span>
+              </div>
+            )}
 
           </div>
 
