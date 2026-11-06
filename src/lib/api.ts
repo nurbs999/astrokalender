@@ -585,7 +585,12 @@ export async function saveVote(params: {
       .select()
       .single();
 
-    if (voteError) throw new Error(`Speichern der Stimme fehlgeschlagen: ${voteError.message}`);
+    if (voteError) {
+      if (voteError.message && voteError.message.includes('votes_suggested_month_check')) {
+        throw new Error('Supabase-Constraint: Bitte führe den SQL-Befehl für das Deckblatt in Supabase aus (siehe SQL Editor).');
+      }
+      throw new Error(`Speichern der Stimme fehlgeschlagen: ${voteError.message}`);
+    }
     return data as Vote;
   }
 

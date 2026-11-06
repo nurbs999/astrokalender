@@ -39,6 +39,20 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
       map[m] = [];
     }
 
+    // Helper to sort photos for a specific month slot (0 = Deckblatt, 1..12 = Monate):
+    // 1. Höchste Stimmenzahl für genau diesen Monat (z. B. meiste "Januar"-Stimmen)
+    // 2. Bei Gleichstand: Gesamtzahl der Upvotes (👍)
+    // 3. Stabiler Tie-Breaker: Titel alphabetisch
+    const comparePhotosForSlot = (pA: Photo, pB: Photo, slot: number) => {
+      const countA = summaries[pA.id]?.monthCounts?.[slot] || 0;
+      const countB = summaries[pB.id]?.monthCounts?.[slot] || 0;
+      if (countB !== countA) return countB - countA;
+      const upA = summaries[pA.id]?.upvotes || 0;
+      const upB = summaries[pB.id]?.upvotes || 0;
+      if (upB !== upA) return upB - upA;
+      return pA.title.localeCompare(pB.title);
+    };
+
     if (viewMode === 'personal') {
       Object.values(userVotes).forEach((vote) => {
         if (vote.suggested_month !== null && vote.suggested_month !== undefined && vote.suggested_month >= 0 && vote.suggested_month <= 12) {
@@ -48,23 +62,21 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
           }
         }
       });
+
+      // Wenn für einen Monat mehrere Bilder ausgewählt wurden, das mit den meisten Monatsstimmen an Position 1 setzen
+      for (let m = 0; m <= 12; m++) {
+        if (map[m].length > 1) {
+          map[m].sort((a, b) => comparePhotosForSlot(a, b, m));
+        }
+      }
     } else {
-      // Community mode: for each slot 0..12, find photos that received votes for that month, sorted by count for that month + total upvotes
+      // Community-Modus: Für jeden Slot (0..12) alle Bilder mit Stimmen für diesen Monat sortiert nach Monatsstimmen
       for (let m = 0; m <= 12; m++) {
         const candidates = photos
-          .map((p) => {
-            const s = summaries[p.id];
-            const monthCount = s?.monthCounts?.[m] || 0;
-            const upvotes = s?.upvotes || 0;
-            return { photo: p, monthCount, upvotes };
-          })
-          .filter((item) => item.monthCount > 0)
-          .sort((a, b) => {
-            if (b.monthCount !== a.monthCount) return b.monthCount - a.monthCount;
-            return b.upvotes - a.upvotes;
-          });
+          .filter((p) => (summaries[p.id]?.monthCounts?.[m] || 0) > 0)
+          .sort((a, b) => comparePhotosForSlot(a, b, m));
 
-        map[m] = candidates.map((c) => c.photo);
+        map[m] = candidates;
       }
     }
 
@@ -76,6 +88,7 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
   const coverPhotos = slotPhotosMap[0] || [];
   const activeCoverIdx = Math.min(activeSlotIndex[0] || 0, Math.max(0, coverPhotos.length - 1));
   const currentCoverPhoto = coverPhotos[activeCoverIdx] || null;
+  const currentCoverVotes = currentCoverPhoto ? (summaries[currentCoverPhoto.id]?.monthCounts?.[0] || 0) : 0;
 
   const filledMonthsCount = Array.from({ length: 12 }, (_, i) => i + 1).filter(
     (m) => (slotPhotosMap[m]?.length || 0) > 0
@@ -125,7 +138,10 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
             <div className="flex items-center p-1 rounded-xl bg-space-900 border border-white/10 text-xs font-mono">
               <button
                 type="button"
-                onClick={() => setViewMode('personal')}
+                onClick={() => {
+                  setViewMode('personal');
+                  setActiveSlotIndex({});
+                }}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${viewMode === 'personal'
                     ? 'bg-astro-cyan text-space-950 font-bold shadow-sm'
                     : 'text-slate-400 hover:text-white'
@@ -136,7 +152,10 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => setViewMode('community')}
+                onClick={() => {
+                  setViewMode('community');
+                  setActiveSlotIndex({});
+                }}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${viewMode === 'community'
                     ? 'bg-astro-cyan text-space-950 font-bold shadow-sm'
                     : 'text-slate-400 hover:text-white'
@@ -218,11 +237,23 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
                       </div>
                     </div>
                     <div className="mt-2 flex items-center justify-between px-1">
-                      <div className="truncate">
+                      <div className="truncate min-w-0">
                         <div className="text-xs font-semibold text-white truncate">{currentCoverPhoto.title}</div>
                         <div className="text-[11px] text-slate-400 truncate">Foto: {currentCoverPhoto.author}</div>
                       </div>
-                      <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+                      <div className="text-right shrink-0 flex items-center gap-2">
+                        <div className="text-right">
+                          <span className="text-xs font-mono font-bold text-amber-300 block">
+                            {currentCoverVotes} {currentCoverVotes === 1 ? 'Stimme' : 'Stimmen'}
+                          </span>
+                          {coverPhotos.length > 1 && activeCoverIdx === 0 && (
+                            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                              Top 1
+                            </span>
+                          )}
+                        </div>
+                        <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+                      </div>
                     </div>
                   </div>
                 ) : (
@@ -259,6 +290,7 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
                   Math.max(0, assignedPhotos.length - 1)
                 );
                 const activePhoto = assignedPhotos[activeIdx] || null;
+                const activeMonthVotes = activePhoto ? (summaries[activePhoto.id]?.monthCounts?.[monthNum] || 0) : 0;
 
                 return (
                   <div
@@ -328,11 +360,25 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
                             </div>
                           </div>
                           <div className="mt-2 px-0.5">
-                            <div className="text-xs font-medium text-slate-100 truncate" title={activePhoto.title}>
-                              {activePhoto.title}
-                            </div>
-                            <div className="text-[10px] text-slate-400 truncate">
-                              Foto: {activePhoto.author}
+                            <div className="flex items-start justify-between gap-1.5">
+                              <div className="truncate min-w-0">
+                                <div className="text-xs font-medium text-slate-100 truncate" title={activePhoto.title}>
+                                  {activePhoto.title}
+                                </div>
+                                <div className="text-[10px] text-slate-400 truncate">
+                                  Foto: {activePhoto.author}
+                                </div>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <span className="text-[10px] font-mono font-semibold text-astro-cyan block">
+                                  {activeMonthVotes} {activeMonthVotes === 1 ? 'Stimme' : 'Stimmen'}
+                                </span>
+                                {assignedPhotos.length > 1 && activeIdx === 0 && (
+                                  <span className="inline-block text-[9px] font-mono px-1 py-0.2 rounded bg-astro-cyan/20 text-astro-cyan font-bold">
+                                    Top 1
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </>

@@ -300,9 +300,10 @@ export function App() {
         addToast('🎉 Großartig! Du hast alle Astrofotos für den Kalender bewertet!', 'success');
       }
 
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Failed to save vote:', err);
-      addToast('Fehler beim Speichern der Stimme', 'error');
+      const errorMsg = err instanceof Error ? err.message : 'Fehler beim Speichern der Stimme';
+      addToast(errorMsg, 'error');
       // Re-fetch to rollback
       loadUserVotes(currentVoter);
     }
