@@ -92,8 +92,6 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
     return map;
   }, [viewMode, userVotes, photos, summaries]);
 
-  if (!isOpen) return null;
-
   const coverPhotos = slotPhotosMap[0] || [];
   const activeCoverIdx = Math.min(activeSlotIndex[0] || 0, Math.max(0, coverPhotos.length - 1));
   const currentCoverPhoto = coverPhotos[activeCoverIdx] || null;
@@ -161,6 +159,8 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
       return { ...prev, [slot]: next };
     });
   };
+
+  if (!isOpen) return null;
 
   return (
     <div
