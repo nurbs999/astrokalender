@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, CalendarDays, Sparkles, User, Users, BookOpen, Maximize2, ImageOff, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, CalendarDays, Sparkles, User, Users, BookOpen, Maximize2, ImageOff, ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react';
 import { Photo, Vote, PhotoVoteSummary, MONTH_NAMES } from '../types';
 
 interface CalendarPreviewModalProps {
@@ -99,6 +99,57 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
   const currentCoverPhoto = coverPhotos[activeCoverIdx] || null;
   const currentCoverVotes = currentCoverPhoto ? (summaries[currentCoverPhoto.id]?.monthCounts?.[0] || 0) : 0;
 
+  // Active photo for each slot (0 = Deckblatt, 1..12 = Monate)
+  const activePhotoBySlot = useMemo(() => {
+    const map: Record<number, Photo | null> = {};
+    const cover = slotPhotosMap[0] || [];
+    const coverIdx = Math.min(activeSlotIndex[0] || 0, Math.max(0, cover.length - 1));
+    map[0] = cover[coverIdx] || null;
+
+    for (let m = 1; m <= 12; m++) {
+      const assigned = slotPhotosMap[m] || [];
+      const activeIdx = Math.min(activeSlotIndex[m] || 0, Math.max(0, assigned.length - 1));
+      map[m] = assigned[activeIdx] || null;
+    }
+    return map;
+  }, [slotPhotosMap, activeSlotIndex]);
+
+  // Uniqueness verification: Map each photo ID to all slots (0..12) where it is currently selected
+  const photoSlotsMap = useMemo(() => {
+    const map: Record<string, number[]> = {};
+    Object.entries(activePhotoBySlot).forEach(([slotStr, photo]) => {
+      if (photo) {
+        const slot = parseInt(slotStr, 10);
+        if (!map[photo.id]) map[photo.id] = [];
+        map[photo.id].push(slot);
+      }
+    });
+    return map;
+  }, [activePhotoBySlot]);
+
+  // Set of slots that violate uniqueness (same photo selected in > 1 slot)
+  const duplicateSlots = useMemo(() => {
+    const set = new Set<number>();
+    Object.values(photoSlotsMap).forEach((slots) => {
+      if (slots.length > 1) {
+        slots.forEach((s) => set.add(s));
+      }
+    });
+    return Array.from(set);
+  }, [photoSlotsMap]);
+
+  const getConflictSlotsForSlot = (slot: number): number[] => {
+    const photo = activePhotoBySlot[slot];
+    if (!photo) return [];
+    const allSlots = photoSlotsMap[photo.id] || [];
+    return allSlots.filter((s) => s !== slot);
+  };
+
+  const getConflictNames = (slot: number): string => {
+    const conflicts = getConflictSlotsForSlot(slot);
+    return conflicts.map(s => s === 0 ? 'Deckblatt' : `${s}. ${MONTH_NAMES[s - 1]}`).join(', ');
+  };
+
   const filledMonthsCount = Array.from({ length: 12 }, (_, i) => i + 1).filter(
     (m) => (slotPhotosMap[m]?.length || 0) > 0
   ).length;
@@ -130,11 +181,17 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
               <CalendarDays className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="font-display font-bold text-base sm:text-lg text-white flex items-center gap-2">
+              <h2 className="font-display font-bold text-base sm:text-lg text-white flex flex-wrap items-center gap-2">
                 <span>Astro-Kalender 2027 – Vorschau</span>
                 <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-astro-cyan/15 text-astro-cyan border border-astro-cyan/30">
                   {coverPhotos.length > 0 ? 'Deckblatt ✓' : 'Kein Deckblatt'} • {filledMonthsCount}/12 Monate
                 </span>
+                {duplicateSlots.length > 0 && (
+                  <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 flex items-center gap-1 font-semibold animate-pulse">
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                    <span>{duplicateSlots.length} Doppelbelegungen!</span>
+                  </span>
+                )}
               </h2>
               <p className="text-xs text-slate-400 hidden sm:block">
                 Übersicht des Kalenderdeckblatts und aller 12 Monatsblätter im 3×4-Raster (DIN A3)
@@ -190,12 +247,43 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
         {/* Scrollable Main Content: Deckblatt on Top + 3x4 Month Grid Below */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
 
+          {/* Uniqueness Warning Banner */}
+          {duplicateSlots.length > 0 && (
+            <div className="p-3.5 rounded-2xl bg-rose-500/15 border-2 border-rose-500/40 text-rose-200 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xl backdrop-blur-md">
+              <div className="flex items-center gap-2.5">
+                <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 animate-bounce" />
+                <div>
+                  <strong className="text-white block font-semibold text-sm">Achtung: Doppelbelegung im Kalender erkannt!</strong>
+                  <span>
+                    Ein oder mehrere Bilder sind für mehr als einen Monat bzw. das Deckblatt ausgewählt (rot umrandet).
+                    {viewMode === 'community' && ' Nutze bei den rot umrandeten Monaten die Pfeile ‹ ›, um alternative Motive auszuwählen.'}
+                  </span>
+                </div>
+              </div>
+              <span className="px-3 py-1 rounded-full bg-rose-500/30 text-rose-200 border border-rose-500/50 font-mono text-xs font-bold shrink-0">
+                ⚠️ {duplicateSlots.length} betroffene Monate
+              </span>
+            </div>
+          )}
+
           {/* 1. KALENDERDECKBLATT (TOP CENTER) */}
           <div className="max-w-lg mx-auto">
-            <div className="rounded-2xl bg-gradient-to-b from-amber-500/10 via-space-950/90 to-space-950/90 border border-amber-400/40 shadow-xl overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-2 bg-amber-500/10 border-b border-amber-400/20">
-                <div className="flex items-center gap-2 text-xs font-mono font-bold text-amber-300">
-                  <BookOpen className="w-4 h-4 text-amber-400" />
+            <div className={`rounded-2xl bg-gradient-to-b from-amber-500/10 via-space-950/90 to-space-950/90 shadow-xl overflow-hidden transition-all ${
+              duplicateSlots.includes(0)
+                ? 'border-2 border-rose-500 ring-2 ring-rose-500/40 shadow-rose-950/60'
+                : 'border border-amber-400/40'
+            }`}>
+              <div className={`flex items-center justify-between px-4 py-2 border-b transition-colors ${
+                duplicateSlots.includes(0)
+                  ? 'bg-rose-500/20 border-rose-500/40 text-rose-300'
+                  : 'bg-amber-500/10 border-amber-400/20 text-amber-300'
+              }`}>
+                <div className="flex items-center gap-2 text-xs font-mono font-bold">
+                  {duplicateSlots.includes(0) ? (
+                    <AlertTriangle className="w-4 h-4 text-rose-400" />
+                  ) : (
+                    <BookOpen className="w-4 h-4 text-amber-400" />
+                  )}
                   <span>KALENDER-DECKBLATT (TITELBILD)</span>
                 </div>
                 {coverPhotos.length > 1 && (
@@ -264,6 +352,12 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
                         <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
                       </div>
                     </div>
+                    {duplicateSlots.includes(0) && (
+                      <div className="mt-2 p-2 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-mono flex items-center gap-1.5 animate-pulse">
+                        <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+                        <span><strong>Doppelbelegung:</strong> Dasselbe Bild ist auch für {getConflictNames(0)} ausgewählt!</span>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="aspect-[1.4142/1] w-full rounded-xl border border-dashed border-white/10 bg-space-950/50 flex flex-col items-center justify-center p-4 text-center">
@@ -300,24 +394,34 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
                 );
                 const activePhoto = assignedPhotos[activeIdx] || null;
                 const activeMonthVotes = activePhoto ? (summaries[activePhoto.id]?.monthCounts?.[monthNum] || 0) : 0;
+                const isMonthDuplicate = duplicateSlots.includes(monthNum);
 
                 return (
                   <div
                     key={monthNum}
-                    className={`rounded-xl border transition-all overflow-hidden flex flex-col ${activePhoto
+                    className={`rounded-xl border transition-all overflow-hidden flex flex-col ${
+                      isMonthDuplicate
+                        ? 'bg-space-950/95 border-2 border-rose-500 ring-2 ring-rose-500/40 shadow-lg shadow-rose-950/60'
+                        : activePhoto
                         ? 'bg-space-950/90 border-astro-cyan/30 shadow-lg'
                         : 'bg-space-950/40 border-white/10'
-                      }`}
+                    }`}
                   >
                     {/* Month Card Header */}
                     <div
-                      className={`flex items-center justify-between px-3 py-1.5 border-b text-xs font-mono ${activePhoto
+                      className={`flex items-center justify-between px-3 py-1.5 border-b text-xs font-mono transition-colors ${
+                        isMonthDuplicate
+                          ? 'bg-rose-500/20 border-rose-500/40 text-rose-300 font-bold'
+                          : activePhoto
                           ? 'bg-astro-cyan/10 border-astro-cyan/20 text-astro-cyan font-bold'
                           : 'bg-space-900/60 border-white/5 text-slate-400'
-                        }`}
+                      }`}
                     >
-                      <span>
-                        {monthNum}. {monthName}
+                      <span className="flex items-center gap-1">
+                        {isMonthDuplicate && <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />}
+                        <span>
+                          {monthNum}. {monthName}
+                        </span>
                       </span>
                       {assignedPhotos.length > 1 && (
                         <div className="flex items-center gap-1 text-[10px] text-slate-300">
@@ -389,6 +493,12 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
                                 )}
                               </div>
                             </div>
+                            {isMonthDuplicate && (
+                              <div className="mt-1.5 p-1.5 rounded-lg bg-rose-500/15 border border-rose-500/35 text-rose-300 text-[10px] font-mono flex items-center gap-1 animate-pulse">
+                                <AlertTriangle className="w-3 h-3 text-rose-400 shrink-0" />
+                                <span className="truncate">Doppelbelegung mit {getConflictNames(monthNum)}</span>
+                              </div>
+                            )}
                           </div>
                         </>
                       ) : (

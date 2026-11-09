@@ -7,6 +7,7 @@ interface NavbarProps {
   totalPhotos: number;
   votedCount: number;
   selectedMonths: number[];
+  duplicateMonths?: number[];
   isSupabaseLive: boolean;
   onOpenVoterModal: () => void;
   onOpenSupabaseModal: () => void;
@@ -18,6 +19,7 @@ interface NavbarProps {
 export const Navbar: React.FC<NavbarProps> = ({
   currentVoter,
   selectedMonths,
+  duplicateMonths = [],
   onOpenVoterModal,
   onOpenVerificationModal,
   onOpenCalendarModal,
@@ -26,21 +28,30 @@ export const Navbar: React.FC<NavbarProps> = ({
   const row1 = [1, 2, 3, 4, 5, 6];
   const row2 = [7, 8, 9, 10, 11, 12];
   const hasCover = selectedMonths.includes(0);
+  const isCoverDuplicate = duplicateMonths.includes(0);
+  const hasDuplicates = duplicateMonths.length > 0;
   const selectedCount = selectedMonths.filter((m) => m >= 1 && m <= 12).length;
 
   const renderMonthRow = (months: number[]) => (
     <div className="grid grid-cols-6 gap-1 w-full">
       {months.map((m) => {
         const isSelected = selectedMonths.includes(m);
+        const isDuplicate = duplicateMonths.includes(m);
         const shortName = MONTH_SHORT_NAMES[m - 1];
         const fullName = MONTH_NAMES[m - 1];
 
         return (
           <div
             key={m}
-            title={`${fullName}: ${isSelected ? 'Mindestens ein Bild ausgewählt' : 'Noch kein Bild zugewiesen'}`}
+            title={
+              isDuplicate
+                ? `${fullName}: ⚠️ Achtung Doppelbelegung! Dasselbe Bild ist mehrfach im Kalender ausgewählt.`
+                : `${fullName}: ${isSelected ? 'Mindestens ein Bild ausgewählt' : 'Noch kein Bild zugewiesen'}`
+            }
             className={`px-1 py-0.5 rounded text-[10px] font-mono text-center border transition-all duration-300 ${
-              isSelected
+              isDuplicate
+                ? 'border-2 border-rose-500 bg-rose-500/25 text-rose-300 font-bold ring-1 ring-rose-500/50 scale-[1.03] shadow-sm'
+                : isSelected
                 ? 'bg-astro-cyan/25 border-astro-cyan text-astro-cyan font-bold shadow-glow-cyan/20 scale-[1.02]'
                 : 'bg-space-900/60 border-white/5 text-slate-500'
             }`}
@@ -92,16 +103,26 @@ export const Navbar: React.FC<NavbarProps> = ({
               </span>
               <span
                 className={`px-1.5 py-0.2 rounded text-[10px] border transition-all ${
-                  hasCover
+                  isCoverDuplicate
+                    ? 'border-2 border-rose-500 bg-rose-500/25 text-rose-300 font-bold ring-1 ring-rose-500/50 shadow-sm'
+                    : hasCover
                     ? 'bg-amber-400/20 border-amber-400 text-amber-300 font-bold shadow-sm'
                     : 'bg-space-900/60 border-white/5 text-slate-500'
                 }`}
+                title={isCoverDuplicate ? 'Deckblatt: ⚠️ Achtung Doppelbelegung! Dasselbe Bild ist auch für andere Monate ausgewählt.' : undefined}
               >
                 Deckblatt
               </span>
-              <span className={`font-semibold ${selectedCount === 12 ? 'text-emerald-400' : 'text-astro-cyan'}`}>
-                {selectedCount} / 12
-              </span>
+              <div className="flex items-center gap-1.5">
+                {hasDuplicates && (
+                  <span className="text-[9px] font-bold text-rose-300 bg-rose-500/25 border border-rose-500/50 px-1.5 py-0.2 rounded-full animate-pulse" title="Doppelbelegung: Mindestens ein Bild ist für mehrere Monate ausgewählt!">
+                    ⚠️ Duplikat
+                  </span>
+                )}
+                <span className={`font-semibold ${hasDuplicates ? 'text-rose-400' : selectedCount === 12 ? 'text-emerald-400' : 'text-astro-cyan'}`}>
+                  {selectedCount} / 12
+                </span>
+              </div>
             </div>
             {renderMonthRow(row1)}
             {renderMonthRow(row2)}
@@ -202,14 +223,22 @@ export const Navbar: React.FC<NavbarProps> = ({
               <div className="flex items-center gap-2">
                 <span
                   className={`px-1.5 py-0.5 rounded text-[10px] border transition-all ${
-                    hasCover
+                    isCoverDuplicate
+                      ? 'border-2 border-rose-500 bg-rose-500/25 text-rose-300 font-bold ring-1 ring-rose-500/50 shadow-sm'
+                      : hasCover
                       ? 'bg-amber-400/20 border-amber-400 text-amber-300 font-bold'
                       : 'bg-space-900/60 border-white/5 text-slate-500'
                   }`}
+                  title={isCoverDuplicate ? 'Deckblatt: ⚠️ Achtung Doppelbelegung! Dasselbe Bild ist auch für andere Monate ausgewählt.' : undefined}
                 >
                   Deckblatt
                 </span>
-                <span className={`font-semibold ${selectedCount === 12 ? 'text-emerald-400' : 'text-astro-cyan'}`}>
+                {hasDuplicates && (
+                  <span className="text-[9px] font-bold text-rose-300 bg-rose-500/25 border border-rose-500/50 px-1.5 py-0.2 rounded-full animate-pulse">
+                    ⚠️ Duplikat
+                  </span>
+                )}
+                <span className={`font-semibold ${hasDuplicates ? 'text-rose-400' : selectedCount === 12 ? 'text-emerald-400' : 'text-astro-cyan'}`}>
                   {selectedCount} / 12
                 </span>
               </div>

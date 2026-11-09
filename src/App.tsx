@@ -440,6 +440,46 @@ export function App() {
     return Array.from(set);
   }, [summaries]);
 
+  // Uniqueness verification: Find any slots (0 = Deckblatt, 1..12 = Monate) where the same photo is chosen multiple times
+  const globalDuplicateMonths = useMemo(() => {
+    const comparePhotosForSlot = (pA: Photo, pB: Photo, slot: number) => {
+      const countA = summaries[pA.id]?.monthCounts?.[slot] || 0;
+      const countB = summaries[pB.id]?.monthCounts?.[slot] || 0;
+      if (countB !== countA) return countB - countA;
+      const upA = summaries[pA.id]?.upvotes || 0;
+      const upB = summaries[pB.id]?.upvotes || 0;
+      if (upB !== upA) return upB - upA;
+      return pA.title.localeCompare(pB.title);
+    };
+
+    const slotToPhotoId: Record<number, string> = {};
+    for (let slot = 0; slot <= 12; slot++) {
+      const candidates = photos
+        .filter((p) => (summaries[p.id]?.monthCounts?.[slot] || 0) > 0)
+        .sort((a, b) => comparePhotosForSlot(a, b, slot));
+
+      if (candidates.length > 0) {
+        slotToPhotoId[slot] = candidates[0].id;
+      }
+    }
+
+    const photoIdToSlots: Record<string, number[]> = {};
+    Object.entries(slotToPhotoId).forEach(([slotStr, photoId]) => {
+      const slot = parseInt(slotStr, 10);
+      if (!photoIdToSlots[photoId]) photoIdToSlots[photoId] = [];
+      photoIdToSlots[photoId].push(slot);
+    });
+
+    const duplicates = new Set<number>();
+    Object.values(photoIdToSlots).forEach((slots) => {
+      if (slots.length > 1) {
+        slots.forEach((s) => duplicates.add(s));
+      }
+    });
+
+    return Array.from(duplicates);
+  }, [photos, summaries]);
+
   return (
     <div className="min-h-screen flex flex-col bg-space-950 text-slate-100 selection:bg-astro-cyan/30">
 
@@ -449,6 +489,7 @@ export function App() {
         totalPhotos={photos.length}
         votedCount={votedCount}
         selectedMonths={globalVotedMonths}
+        duplicateMonths={globalDuplicateMonths}
         isSupabaseLive={isUsingLiveSupabase()}
         onOpenVoterModal={() => setIsVoterModalOpen(true)}
         onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
