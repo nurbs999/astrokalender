@@ -66,10 +66,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   return (
     <header className="sticky top-0 z-40 bg-space-950/80 backdrop-blur-md border-b border-white/10 transition-all">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-20">
+        <div className="flex items-center justify-between min-h-[5rem] py-2 sm:py-2.5 transition-all">
 
           {/* Logo & Brand */}
-          <div className="flex items-center gap-3 cursor-pointer" onClick={() => { if (window.location.hash) window.location.hash = ''; }}>
+          <div className="flex items-center gap-3 cursor-pointer shrink-0" onClick={() => { if (window.location.hash) window.location.hash = ''; }}>
             <div className="relative flex items-center justify-center w-11 h-11 rounded-xl bg-gradient-to-br from-astro-cyan/20 to-astro-purple/30 border border-astro-cyan/40 shadow-glow-cyan">
               <Sparkles className="w-6 h-6 text-astro-cyan animate-pulse" />
               <div className="absolute -inset-0.5 rounded-xl bg-astro-cyan/20 blur-sm -z-10" />
@@ -94,32 +94,36 @@ export const Navbar: React.FC<NavbarProps> = ({
             type="button"
             onClick={onOpenCalendarModal}
             title="Klicken, um die Kalender-Vorschau (Deckblatt & 12 Monate) zu öffnen"
-            className="hidden lg:flex flex-col items-center gap-1 w-72 bg-space-900/40 hover:bg-space-900/80 p-2 rounded-xl border border-white/10 hover:border-astro-cyan/50 backdrop-blur-md transition-all cursor-pointer group"
+            className={`hidden lg:flex flex-col items-center gap-1.5 w-76 xl:w-80 min-w-[18.5rem] bg-space-900/40 hover:bg-space-900/80 p-2 sm:p-2.5 rounded-xl border backdrop-blur-md transition-all cursor-pointer group shrink-0 ${
+              hasDuplicates
+                ? 'border-rose-500/40 bg-rose-950/20 shadow-glow-rose/10'
+                : 'border-white/10 hover:border-astro-cyan/50'
+            }`}
           >
-            <div className="flex items-center justify-between w-full text-[11px] font-mono px-0.5">
-              <span className="text-slate-300 group-hover:text-astro-cyan flex items-center gap-1.5 transition-colors">
+            <div className="flex items-center justify-between w-full text-[11px] font-mono px-0.5 flex-wrap gap-1">
+              <span className="text-slate-300 group-hover:text-astro-cyan flex items-center gap-1.5 transition-colors shrink-0">
                 <CalendarDays className="w-3.5 h-3.5 text-astro-cyan" />
                 <span>Vorschau</span>
               </span>
-              <span
-                className={`px-1.5 py-0.2 rounded text-[10px] border transition-all ${
-                  isCoverDuplicate
-                    ? 'border-2 border-rose-500 bg-rose-500/25 text-rose-300 font-bold ring-1 ring-rose-500/50 shadow-sm'
-                    : hasCover
-                    ? 'bg-amber-400/20 border-amber-400 text-amber-300 font-bold shadow-sm'
-                    : 'bg-space-900/60 border-white/5 text-slate-500'
-                }`}
-                title={isCoverDuplicate ? 'Deckblatt: ⚠️ Achtung Doppelbelegung! Dasselbe Bild ist auch für andere Monate ausgewählt.' : undefined}
-              >
-                Deckblatt
-              </span>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span
+                  className={`px-1.5 py-0.2 rounded text-[10px] border transition-all ${
+                    isCoverDuplicate
+                      ? 'border-2 border-rose-500 bg-rose-500/25 text-rose-300 font-bold ring-1 ring-rose-500/50 shadow-sm'
+                      : hasCover
+                      ? 'bg-amber-400/20 border-amber-400 text-amber-300 font-bold shadow-sm'
+                      : 'bg-space-900/60 border-white/5 text-slate-500'
+                  }`}
+                  title={isCoverDuplicate ? 'Deckblatt: ⚠️ Achtung Doppelbelegung! Dasselbe Bild ist auch für andere Monate ausgewählt.' : undefined}
+                >
+                  Deckblatt
+                </span>
                 {hasDuplicates && (
-                  <span className="text-[9px] font-bold text-rose-300 bg-rose-500/25 border border-rose-500/50 px-1.5 py-0.2 rounded-full animate-pulse" title="Doppelbelegung: Mindestens ein Bild ist für mehrere Monate ausgewählt!">
+                  <span className="text-[9px] font-bold text-rose-300 bg-rose-500/25 border border-rose-500/50 px-1.5 py-0.2 rounded-full animate-pulse shrink-0" title="Doppelbelegung: Mindestens ein Bild ist für mehrere Monate ausgewählt!">
                     ⚠️ Duplikat
                   </span>
                 )}
-                <span className={`font-semibold ${hasDuplicates ? 'text-rose-400' : selectedCount === 12 ? 'text-emerald-400' : 'text-astro-cyan'}`}>
+                <span className={`font-semibold shrink-0 ${hasDuplicates ? 'text-rose-400' : selectedCount === 12 ? 'text-emerald-400' : 'text-astro-cyan'}`}>
                   {selectedCount} / 12
                 </span>
               </div>
@@ -129,7 +133,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
 
           {/* Actions & Voter Badge */}
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
 
             {/* Prominent Badge with Arrow pointing to login if not registered */}
             {!currentVoter && (
@@ -213,14 +217,18 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             type="button"
             onClick={onOpenCalendarModal}
-            className="w-full bg-space-900/40 hover:bg-space-900/70 p-2.5 rounded-xl border border-white/10 hover:border-astro-cyan/40 transition-all text-left"
+            className={`w-full bg-space-900/40 hover:bg-space-900/70 p-2.5 rounded-xl border transition-all text-left ${
+              hasDuplicates
+                ? 'border-rose-500/40 bg-rose-950/20 shadow-glow-rose/10'
+                : 'border-white/10 hover:border-astro-cyan/40'
+            }`}
           >
-            <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 mb-1.5 px-0.5">
-              <span className="flex items-center gap-1.5 text-slate-300">
+            <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 mb-1.5 px-0.5 flex-wrap gap-1">
+              <span className="flex items-center gap-1.5 text-slate-300 shrink-0">
                 <CalendarDays className="w-3.5 h-3.5 text-astro-cyan" />
                 <span>Kalender-Vorschau öffnen</span>
               </span>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 <span
                   className={`px-1.5 py-0.5 rounded text-[10px] border transition-all ${
                     isCoverDuplicate
