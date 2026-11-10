@@ -159,3 +159,93 @@ CREATE POLICY "Löschen von Fotos erlauben"
     ON storage.objects FOR DELETE
     TO anon, authenticated
     USING (bucket_id = 'photos');
+
+-- ------------------------------------------------------------------------------
+-- 5. Admin-Konfiguration & Passwort-Prüfung in Supabase (mit Bcrypt-Verschlüsselung)
+-- ------------------------------------------------------------------------------
+-- pgcrypto Erweiterung für kryptografisches Hashing (bcrypt) aktivieren
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- Tabelle für Einstellungen (Admin-Passwort-Hash)
+CREATE TABLE IF NOT EXISTS public.admin_config (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- RLS aktivieren: Die Tabelle ist NICHT öffentlich lesbar (weder per anon noch per authenticated)
+ALTER TABLE public.admin_config ENABLE ROW LEVEL SECURITY;
+
+-- Automatischer Hashing-Trigger:
+-- Du kannst das Passwort weiterhin als ganz normales Wort in der Supabase-UI eintragen!
+-- Dieser Trigger wandelt es beim Speichern automatisch in einen sicheren Bcrypt-Hash ($2a$...) um!
+CREATE OR REPLACE FUNCTION public.hash_admin_password_trigger()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    -- Nur hashen, wenn es sich um das Admin-Passwort handelt und es noch kein Bcrypt-Hash ist
+    IF NEW.key = 'admin_password' AND NEW.value NOT LIKE '$2%' THEN
+        NEW.value := crypt(NEW.value, gen_salt('bf', 10));
+    END IF;
+    NEW.updated_at := timezone('utc'::text, now());
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_hash_admin_password ON public.admin_config;
+CREATE TRIGGER trg_hash_admin_password
+BEFORE INSERT OR UPDATE ON public.admin_config
+FOR EACH ROW
+EXECUTE FUNCTION public.hash_admin_password_trigger();
+
+-- Initiales Standardpasswort setzen (wird durch den Trigger sofort gehasht!)
+INSERT INTO public.admin_config (key, value)
+VALUES ('admin_password', 'astro2025!')
+ON CONFLICT (key) DO NOTHING;
+
+-- Sichere Verifizierungsfunktion (SECURITY DEFINER = läuft mit Rechten des Datenbankbesitzers)
+-- Gibt NUR true oder false zurück, niemals das Passwort oder den Hash!
+CREATE OR REPLACE FUNCTION public.verify_admin_password(input_password TEXT)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    stored_val TEXT;
+BEGIN
+    SELECT value INTO stored_val FROM public.admin_config WHERE key = 'admin_password';
+    IF stored_val IS NULL THEN
+        -- Fallback, falls die Zeile noch nicht existiert
+        RETURN input_password = 'admin';
+    END IF;
+    
+    -- 1. Prüfung gegen Bcrypt-Hash ($2a$, $2b$, $2y$)
+    IF stored_val LIKE '$2%' THEN
+        RETURN stored_val = crypt(input_password, stored_val);
+    END IF;
+
+    -- 2. Fallback für ältere Klartext-Einträge
+    RETURN stored_val = input_password;
+END;
+$$;
+
+-- Sichere Funktion zum Ändern des Admin-Passworts aus der App heraus
+CREATE OR REPLACE FUNCTION public.set_admin_password(new_password TEXT)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+    IF new_password IS NULL OR length(trim(new_password)) < 3 THEN
+        RAISE EXCEPTION 'Passwort muss mindestens 3 Zeichen lang sein';
+    END IF;
+    
+    INSERT INTO public.admin_config (key, value, updated_at)
+    VALUES ('admin_password', trim(new_password), timezone('utc'::text, now()))
+    ON CONFLICT (key) DO UPDATE 
+    SET value = EXCLUDED.value, updated_at = timezone('utc'::text, now());
+    
+    RETURN true;
+END;
+$$;

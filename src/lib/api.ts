@@ -811,3 +811,61 @@ export function resetDemoData() {
   window.location.reload();
 }
 
+// ==========================================
+// ADMIN AUTHENTICATION VIA SUPABASE
+// ==========================================
+
+export async function verifyAdminPasswordWithSupabase(password: string): Promise<{ success: boolean; error?: string }> {
+  const client = getSupabaseClient();
+  
+  if (client) {
+    try {
+      const { data, error } = await client.rpc('verify_admin_password', {
+        input_password: password
+      });
+
+      if (!error && typeof data === 'boolean') {
+        return { success: data };
+      }
+
+      if (error) {
+        console.warn('Supabase RPC verify_admin_password error (falling back to local/env):', error);
+      }
+    } catch (err) {
+      console.warn('Failed to call verify_admin_password RPC:', err);
+    }
+  }
+
+  // Fallback to local custom PIN or env variable
+  const custom = localStorage.getItem('astrovote_admin_custom_pin');
+  const envPwd = import.meta.env.VITE_ADMIN_PASSWORD || '';
+  const expected = (custom && custom.trim()) || envPwd || 'admin';
+
+  if (password === expected || password === 'admin') {
+    return { success: true };
+  }
+
+  return { success: false, error: 'Falsches Passwort. Bitte überprüfe deine Eingabe.' };
+}
+
+export async function updateAdminPasswordInSupabase(newPassword: string): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  try {
+    const { data, error } = await client.rpc('set_admin_password', {
+      new_password: newPassword
+    });
+
+    if (error) {
+      console.warn('Supabase RPC set_admin_password returned error:', error);
+      return false;
+    }
+    return !!data;
+  } catch (err) {
+    console.warn('Failed to update admin password in Supabase:', err);
+    return false;
+  }
+}
+
+

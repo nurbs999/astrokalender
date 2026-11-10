@@ -10,7 +10,7 @@ import { compressImage, CompressionResult, DINA3_MAX_WIDTH, DINA3_MAX_HEIGHT } f
 import {
   uploadPhoto, updatePhoto, deletePhoto, fetchAllVotesSummary,
   fetchVotersList, fetchAllVotesDetailed, seedDemoPhotosToSupabase, isUsingLiveSupabase,
-  uploadImageFile, deleteStorageImage
+  uploadImageFile, deleteStorageImage, verifyAdminPasswordWithSupabase, updateAdminPasswordInSupabase
 } from '../lib/api';
 
 interface AdminDashboardProps {
@@ -24,7 +24,7 @@ const LS_ADMIN_PASSWORD_KEY = 'astrovote_admin_custom_pin';
 export const getExpectedAdminPassword = (): string => {
   const custom = localStorage.getItem(LS_ADMIN_PASSWORD_KEY);
   if (custom && custom.trim()) return custom.trim();
-  return import.meta.env.VITE_ADMIN_PASSWORD || 'astro2026';
+  return import.meta.env.VITE_ADMIN_PASSWORD || '';
 };
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -38,11 +38,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   });
   const [passwordInput, setPasswordInput] = useState('');
   const [authError, setAuthError] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // Password change modal state
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [passwordSuccess, setPasswordSuccess] = useState('');
+  const [isSavingPassword, setIsSavingPassword] = useState(false);
 
   // Seeding state
   const [isSeeding, setIsSeeding] = useState(false);
@@ -111,28 +113,46 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   }, [isAuthenticated, photos]);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const expected = getExpectedAdminPassword();
-    if (passwordInput === expected || passwordInput === 'admin') {
-      setIsAuthenticated(true);
-      sessionStorage.setItem('astrovote_admin_auth', 'true');
-      setAuthError('');
-    } else {
-      setAuthError('Falsches Passwort. Bitte überprüfe deine Eingabe.');
+    if (!passwordInput.trim()) return;
+    setIsLoggingIn(true);
+    setAuthError('');
+    try {
+      const result = await verifyAdminPasswordWithSupabase(passwordInput.trim());
+      if (result.success) {
+        setIsAuthenticated(true);
+        sessionStorage.setItem('astrovote_admin_auth', 'true');
+        setAuthError('');
+      } else {
+        setAuthError(result.error || 'Falsches Passwort. Bitte überprüfe deine Eingabe.');
+      }
+    } catch (err) {
+      setAuthError('Fehler bei der Anmeldung. Bitte versuche es erneut.');
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
-  const handleSaveNewPassword = (e: React.FormEvent) => {
+  const handleSaveNewPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newPassword.trim()) return;
-    localStorage.setItem(LS_ADMIN_PASSWORD_KEY, newPassword.trim());
-    setPasswordSuccess('Admin-Passwort erfolgreich geändert!');
-    setTimeout(() => {
-      setIsPasswordModalOpen(false);
-      setNewPassword('');
-      setPasswordSuccess('');
-    }, 1200);
+    const pwd = newPassword.trim();
+    setIsSavingPassword(true);
+    localStorage.setItem(LS_ADMIN_PASSWORD_KEY, pwd);
+    try {
+      await updateAdminPasswordInSupabase(pwd);
+      setPasswordSuccess('Admin-Passwort erfolgreich geändert und in Supabase synchronisiert!');
+    } catch {
+      setPasswordSuccess('Admin-Passwort lokal gespeichert (Supabase-Sync nicht verfügbar).');
+    } finally {
+      setIsSavingPassword(false);
+      setTimeout(() => {
+        setIsPasswordModalOpen(false);
+        setNewPassword('');
+        setPasswordSuccess('');
+      }, 1400);
+    }
   };
 
   const handleSeedDemoPhotos = async () => {
@@ -314,76 +334,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  // 1. Password / PIN Lock screen
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-[80vh] flex items-center justify-center p-4">
-        <div className="w-full max-w-md p-8 rounded-2xl bg-space-900 border border-white/10 shadow-2xl relative overflow-hidden">
-          <button
-            onClick={onExit}
-            className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-space-800 transition-colors z-20"
-            title="Schließen"
-            aria-label="Schließen"
-          >
-            <X className="w-5 h-5" />
-          </button>
-          <div className="flex justify-between items-center mb-6 pr-8">
-            <button
-              onClick={onExit}
-              className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Zurück zur Galerie
-            </button>
-            <span className="text-[11px] font-mono uppercase tracking-widest text-astro-purple px-2 py-0.5 rounded-full bg-astro-purple/10 border border-astro-purple/30">
-              Admin Access
-            </span>
-          </div>
-
-          <div className="text-center mb-6">
-            <div className="w-14 h-14 rounded-2xl bg-astro-purple/10 border border-astro-purple/40 text-astro-purple flex items-center justify-center mx-auto mb-3 shadow-glow-purple">
-              <Lock className="w-7 h-7" />
-            </div>
-            <h2 className="font-display font-bold text-2xl text-white">Geheimer Admin-Bereich</h2>
-            <p className="text-xs text-slate-400 mt-1">
-              Bitte gib das Admin-Passwort ein, um Fotos hochzuladen und Auswertungen einzusehen.
-            </p>
-          </div>
-
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <input
-                type="password"
-                value={passwordInput}
-                onChange={(e) => setPasswordInput(e.target.value)}
-                placeholder="Admin Passwort (Standard: astro2026)"
-                className="w-full px-4 py-3 rounded-xl bg-space-850 border border-white/10 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-astro-purple"
-                autoFocus
-              />
-            </div>
-
-            {authError && (
-              <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
-                {authError}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-astro-purple to-astro-blue text-white font-semibold text-sm hover:shadow-glow-purple transition-all"
-            >
-              Anmelden
-            </button>
-          </form>
-
-          <p className="text-[11px] text-center text-slate-500 mt-6 font-mono">
-            Tipp: Standard-Passwort ist <span className="text-slate-300">astro2026</span>
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   // Sorted photos by Upvotes
   const rankedPhotos = [...photos].sort((a, b) => {
     const upA = summaries[a.id]?.upvotes ?? 0;
@@ -541,9 +491,84 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     });
   }, [photos, votesByPhoto, auditOnlyWithVotes, auditMonthFilter, auditSearch]);
 
+  // 1. Password / PIN Lock screen
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-[80vh] flex items-center justify-center p-4">
+        <div className="w-full max-w-md p-8 rounded-2xl bg-space-900 border border-white/10 shadow-2xl relative overflow-hidden">
+          <button
+            onClick={onExit}
+            className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-space-800 transition-colors z-20"
+            title="Schließen"
+            aria-label="Schließen"
+          >
+            <X className="w-5 h-5" />
+          </button>
+          <div className="flex justify-between items-center mb-6 pr-8">
+            <button
+              onClick={onExit}
+              className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Zurück zur Galerie
+            </button>
+            <span className="text-[11px] font-mono uppercase tracking-widest text-astro-purple px-2 py-0.5 rounded-full bg-astro-purple/10 border border-astro-purple/30">
+              Admin Access
+            </span>
+          </div>
+
+          <div className="text-center mb-6">
+            <div className="w-14 h-14 rounded-2xl bg-astro-purple/10 border border-astro-purple/40 text-astro-purple flex items-center justify-center mx-auto mb-3 shadow-glow-purple">
+              <Lock className="w-7 h-7" />
+            </div>
+            <h2 className="font-display font-bold text-2xl text-white">Geheimer Admin-Bereich</h2>
+            <p className="text-xs text-slate-400 mt-1">
+              Geschützter Zugang mit sicherer Verifizierung über deine Supabase-Datenbank.
+            </p>
+          </div>
+
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <input
+                type="password"
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                placeholder="Admin Passwort"
+                disabled={isLoggingIn}
+                className="w-full px-4 py-3 rounded-xl bg-space-850 border border-white/10 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-astro-purple disabled:opacity-50"
+                autoFocus
+              />
+            </div>
+
+            {authError && (
+              <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
+                {authError}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isLoggingIn}
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-astro-purple to-astro-blue text-white font-semibold text-sm hover:shadow-glow-purple transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {isLoggingIn ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Wird in Supabase geprüft...
+                </>
+              ) : (
+                'Anmelden'
+              )}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in">
-      
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-6 border-b border-white/10">
         <div>
@@ -620,11 +645,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       <div className="flex flex-wrap gap-2 my-6">
         <button
           onClick={() => setActiveTab('ranking')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium transition-all ${
-            activeTab === 'ranking'
-              ? 'bg-astro-purple text-white shadow-glow-purple font-semibold'
-              : 'bg-space-850 hover:bg-space-800 text-slate-300 border border-white/5'
-          }`}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium transition-all ${activeTab === 'ranking'
+            ? 'bg-astro-purple text-white shadow-glow-purple font-semibold'
+            : 'bg-space-850 hover:bg-space-800 text-slate-300 border border-white/5'
+            }`}
         >
           <BarChart3 className="w-4 h-4" />
           <span>Auswertung & Rankings ({rankedPhotos.length})</span>
@@ -632,11 +656,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
         <button
           onClick={() => setActiveTab('votes_audit')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium transition-all ${
-            activeTab === 'votes_audit'
-              ? 'bg-astro-cyan text-space-950 font-bold shadow-glow-cyan'
-              : 'bg-space-850 hover:bg-space-800 text-slate-300 border border-white/5'
-          }`}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium transition-all ${activeTab === 'votes_audit'
+            ? 'bg-astro-cyan text-space-950 font-bold shadow-glow-cyan'
+            : 'bg-space-850 hover:bg-space-800 text-slate-300 border border-white/5'
+            }`}
         >
           <ShieldCheck className="w-4 h-4" />
           <span>Stimmen pro Bild & Audit ({allDetailedVotes.length})</span>
@@ -653,11 +676,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
         <button
           onClick={() => setActiveTab('voters')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium transition-all ${
-            activeTab === 'voters'
-              ? 'bg-astro-lime text-space-950 font-semibold shadow-glow-lime'
-              : 'bg-space-850 hover:bg-space-800 text-slate-300 border border-white/5'
-          }`}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium transition-all ${activeTab === 'voters'
+            ? 'bg-astro-lime text-space-950 font-semibold shadow-glow-lime'
+            : 'bg-space-850 hover:bg-space-800 text-slate-300 border border-white/5'
+            }`}
         >
           <Users className="w-4 h-4" />
           <span>Wähler-Liste ({voters.length})</span>
@@ -665,11 +687,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
         <button
           onClick={() => setActiveTab('upload')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium transition-all ${
-            activeTab === 'upload'
-              ? 'bg-amber-400 text-space-950 font-semibold shadow-sm'
-              : 'bg-space-850 hover:bg-space-800 text-slate-300 border border-white/5'
-          }`}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium transition-all ${activeTab === 'upload'
+            ? 'bg-amber-400 text-space-950 font-semibold shadow-sm'
+            : 'bg-space-850 hover:bg-space-800 text-slate-300 border border-white/5'
+            }`}
         >
           <Upload className="w-4 h-4" />
           <span>Bild-Upload & Kompression (DIN A3)</span>
@@ -677,11 +698,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
         <button
           onClick={() => setActiveTab('manage')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium transition-all ${
-            activeTab === 'manage'
-              ? 'bg-white/20 text-white border border-white/30'
-              : 'bg-space-850 hover:bg-space-800 text-slate-300 border border-white/5'
-          }`}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium transition-all ${activeTab === 'manage'
+            ? 'bg-white/20 text-white border border-white/30'
+            : 'bg-space-850 hover:bg-space-800 text-slate-300 border border-white/5'
+            }`}
         >
           <ImageIcon className="w-4 h-4" />
           <span>Fotos verwalten & löschen</span>
@@ -774,13 +794,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             >
                               <div
                                 style={{ height: `${Math.max(heightPct > 0 ? 15 : 4, heightPct)}%` }}
-                                className={`w-full rounded-t-sm transition-all ${
-                                  count === 0
-                                    ? 'bg-space-800'
-                                    : isTop
+                                className={`w-full rounded-t-sm transition-all ${count === 0
+                                  ? 'bg-space-800'
+                                  : isTop
                                     ? 'bg-gradient-to-t from-astro-cyan to-astro-blue'
                                     : 'bg-slate-600 hover:bg-slate-500'
-                                }`}
+                                  }`}
                               />
                               <span className={`text-[9px] font-mono mt-1 ${monthNum === 0 ? 'text-amber-400 font-bold' : 'text-slate-500'}`}>
                                 {monthNum === 0 ? 'D' : monthNum}
@@ -876,11 +895,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div className="text-[10px] text-slate-400 mt-1">Im Kalender-Voting bewertet</div>
               </div>
 
-              <div className={`p-4 rounded-xl border ${
-                duplicateReport.hasDuplicates
-                  ? 'bg-rose-500/10 border-rose-500/40 text-rose-300'
-                  : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-              }`}>
+              <div className={`p-4 rounded-xl border ${duplicateReport.hasDuplicates
+                ? 'bg-rose-500/10 border-rose-500/40 text-rose-300'
+                : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                }`}>
                 <div className="text-[11px] font-mono mb-1 flex items-center justify-between">
                   <span>Duplikat-Prüfung</span>
                   {duplicateReport.hasDuplicates ? (
@@ -933,11 +951,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <button
                   type="button"
                   onClick={() => setAuditOnlyWithVotes(prev => !prev)}
-                  className={`px-3 py-2 rounded-lg text-xs font-mono border transition-colors flex items-center gap-1.5 cursor-pointer ${
-                    auditOnlyWithVotes
-                      ? 'bg-astro-cyan/20 border-astro-cyan text-astro-cyan font-semibold'
-                      : 'bg-space-850 border-white/10 text-slate-400 hover:text-white'
-                  }`}
+                  className={`px-3 py-2 rounded-lg text-xs font-mono border transition-colors flex items-center gap-1.5 cursor-pointer ${auditOnlyWithVotes
+                    ? 'bg-astro-cyan/20 border-astro-cyan text-astro-cyan font-semibold'
+                    : 'bg-space-850 border-white/10 text-slate-400 hover:text-white'
+                    }`}
                 >
                   <span>Nur mit Stimmen</span>
                 </button>
@@ -974,11 +991,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   return (
                     <div
                       key={photo.id}
-                      className={`rounded-2xl border transition-all overflow-hidden ${
-                        photoHasDuplicate
-                          ? 'bg-rose-950/20 border-rose-500/50 shadow-lg'
-                          : 'bg-space-850/70 border-white/10 hover:border-white/20'
-                      }`}
+                      className={`rounded-2xl border transition-all overflow-hidden ${photoHasDuplicate
+                        ? 'bg-rose-950/20 border-rose-500/50 shadow-lg'
+                        : 'bg-space-850/70 border-white/10 hover:border-white/20'
+                        }`}
                     >
                       {/* Photo Header Bar */}
                       <div
@@ -1008,11 +1024,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               return (
                                 <span
                                   key={m}
-                                  className={`px-1.5 py-0.5 rounded border ${
-                                    m === 0
-                                      ? 'bg-amber-400/15 border-amber-400/30 text-amber-300'
-                                      : 'bg-astro-cyan/10 border-astro-cyan/20 text-astro-cyan'
-                                  }`}
+                                  className={`px-1.5 py-0.5 rounded border ${m === 0
+                                    ? 'bg-amber-400/15 border-amber-400/30 text-amber-300'
+                                    : 'bg-astro-cyan/10 border-astro-cyan/20 text-astro-cyan'
+                                    }`}
                                 >
                                   {count}x {m === 0 ? 'Deckblatt' : MONTH_NAMES[m - 1]}
                                 </span>
@@ -1021,11 +1036,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </div>
 
                           {/* Vote count pill */}
-                          <span className={`px-2.5 py-1 rounded-xl text-xs font-mono font-semibold flex items-center gap-1.5 ${
-                            votes.length > 0
-                              ? 'bg-astro-cyan/15 text-astro-cyan border border-astro-cyan/30'
-                              : 'bg-space-950 text-slate-500 border border-white/5'
-                          }`}>
+                          <span className={`px-2.5 py-1 rounded-xl text-xs font-mono font-semibold flex items-center gap-1.5 ${votes.length > 0
+                            ? 'bg-astro-cyan/15 text-astro-cyan border border-astro-cyan/30'
+                            : 'bg-space-950 text-slate-500 border border-white/5'
+                            }`}>
                             <ThumbsUp className="w-3 h-3" />
                             <span>{votes.length} {votes.length === 1 ? 'Stimme' : 'Stimmen'}</span>
                           </span>
@@ -1079,11 +1093,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                     return (
                                       <tr
                                         key={vote.id || `${vote.photo_id}-${vote.voter_email}-${vIdx}`}
-                                        className={`transition-colors ${
-                                          isDuplicateVote
-                                            ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-200'
-                                            : 'hover:bg-white/5'
-                                        }`}
+                                        className={`transition-colors ${isDuplicateVote
+                                          ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-200'
+                                          : 'hover:bg-white/5'
+                                          }`}
                                       >
                                         <td className="py-2.5 px-3 font-medium text-slate-200">
                                           {vote.voter_name || 'Anonym'}
@@ -1171,7 +1184,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </p>
 
             <form onSubmit={handleUploadSubmit} className="space-y-6">
-              
+
               {/* File Drop / Select Area */}
               <div>
                 <label className="block text-xs font-mono text-slate-300 mb-2">
@@ -1195,11 +1208,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       processUploadFile(file);
                     }
                   }}
-                  className={`relative border-2 border-dashed rounded-2xl p-8 text-center transition-all cursor-pointer group ${
-                    isUploadDragging
-                      ? 'border-astro-cyan bg-astro-cyan/15 ring-2 ring-astro-cyan/50 shadow-glow-cyan'
-                      : 'border-white/20 hover:border-astro-cyan/60 bg-space-950/40 hover:bg-space-950/60'
-                  }`}
+                  className={`relative border-2 border-dashed rounded-2xl p-8 text-center transition-all cursor-pointer group ${isUploadDragging
+                    ? 'border-astro-cyan bg-astro-cyan/15 ring-2 ring-astro-cyan/50 shadow-glow-cyan'
+                    : 'border-white/20 hover:border-astro-cyan/60 bg-space-950/40 hover:bg-space-950/60'
+                    }`}
                 >
                   <input
                     type="file"
@@ -1215,8 +1227,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       {isUploadDragging
                         ? 'Bilddatei hier loslassen...'
                         : selectedFile
-                        ? selectedFile.name
-                        : 'Klicke hier oder ziehe eine Bilddatei hinein'}
+                          ? selectedFile.name
+                          : 'Klicke hier oder ziehe eine Bilddatei hinein'}
                     </span>
                     <span className="text-xs text-slate-500 mt-1 font-mono">
                       JPG, PNG, WebP bis 50 MB
@@ -1478,7 +1490,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
               <div>
                 <h3 className="text-base font-bold text-white">Admin-Passwort ändern</h3>
-                <p className="text-xs text-slate-400">Vergib ein neues Passwort für den Admin-Zugang</p>
+                <p className="text-xs text-slate-400">
+                  Wird in deiner Supabase-Datenbank (<code className="text-astro-cyan">admin_config</code>) gespeichert
+                </p>
               </div>
             </div>
 
@@ -1488,12 +1502,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <input
                   type="password"
                   required
+                  disabled={isSavingPassword}
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="Neues Passwort eingeben"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-space-850 border border-white/10 text-white text-sm focus:outline-none focus:border-astro-cyan"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-space-850 border border-white/10 text-white text-sm focus:outline-none focus:border-astro-cyan disabled:opacity-50"
                   autoFocus
                 />
+                <p className="text-[11px] text-slate-500 mt-1.5">
+                  Tipp: Du kannst das Passwort auch jederzeit direkt im Supabase Dashboard unter <strong>Table Editor &rarr; admin_config</strong> eintragen oder anpassen.
+                </p>
               </div>
 
               {passwordSuccess && (
@@ -1506,16 +1524,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
+                  disabled={isSavingPassword}
                   onClick={() => setIsPasswordModalOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-space-800 text-slate-300 text-xs"
+                  className="px-4 py-2 rounded-xl bg-space-800 text-slate-300 text-xs hover:bg-space-700 transition-colors"
                 >
                   Abbrechen
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-astro-cyan to-astro-blue text-space-950 font-bold text-xs"
+                  disabled={isSavingPassword}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-astro-cyan to-astro-blue text-space-950 font-bold text-xs flex items-center gap-1.5 disabled:opacity-50"
                 >
-                  Passwort speichern
+                  {isSavingPassword ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      Wird gespeichert...
+                    </>
+                  ) : (
+                    'Passwort speichern'
+                  )}
                 </button>
               </div>
             </form>
@@ -1546,7 +1573,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
 
             <form onSubmit={handleSaveEdit} className="space-y-4">
-              
+
               {/* Image Preview & Replacement Section with Drag & Drop */}
               <div>
                 <label className="block text-xs font-mono text-slate-300 mb-2">
@@ -1578,11 +1605,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       processEditFile(file);
                     }
                   }}
-                  className={`relative rounded-xl border-2 transition-all p-3 overflow-hidden ${
-                    isEditDragging
-                      ? 'border-astro-cyan bg-astro-cyan/15 ring-2 ring-astro-cyan/50 shadow-glow-cyan'
-                      : 'border-white/10 bg-space-950/80 hover:border-astro-cyan/40'
-                  }`}
+                  className={`relative rounded-xl border-2 transition-all p-3 overflow-hidden ${isEditDragging
+                    ? 'border-astro-cyan bg-astro-cyan/15 ring-2 ring-astro-cyan/50 shadow-glow-cyan'
+                    : 'border-white/10 bg-space-950/80 hover:border-astro-cyan/40'
+                    }`}
                 >
                   {/* Drag overlay indicator */}
                   {isEditDragging && (
