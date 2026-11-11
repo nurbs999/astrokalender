@@ -3,7 +3,7 @@ import {
   Upload, BarChart3, Users, Image as ImageIcon, Trash2, Edit2, Check,
   Lock, ArrowLeft, AlertCircle, FileCheck, RefreshCw, Sparkles, Key, DownloadCloud, X,
   ShieldCheck, AlertTriangle, FileSpreadsheet, ChevronDown, ChevronUp, Search, ThumbsUp, Calendar,
-  CheckCircle2, Pin, CalendarDays, RotateCcw, Maximize2, BookOpen, ImageOff
+  CheckCircle2, Pin, CalendarDays, RotateCcw, Maximize2, BookOpen, ImageOff, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { Photo, PhotoVoteSummary, VoterStats, DetailedVote, MONTH_NAMES, getMonthLabel, getMonthShortLabel } from '../types';
 import { compressImage, CompressionResult, DINA3_MAX_WIDTH, DINA3_MAX_HEIGHT } from '../lib/imageCompressor';
@@ -82,6 +82,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [auditMonthFilter, setAuditMonthFilter] = useState<'all' | number>('all');
   const [auditOnlyWithVotes, setAuditOnlyWithVotes] = useState(false);
   const [expandedPhotoIds, setExpandedPhotoIds] = useState<Record<string, boolean>>({});
+
+  // Active candidate index for each curation slot (0 = Deckblatt, 1..12 = Monate)
+  const [activeCurationSlotIndex, setActiveCurationSlotIndex] = useState<Record<number, number>>({});
+
+  const cycleCurationSlot = (slot: number, delta: number, total: number) => {
+    setActiveCurationSlotIndex((prev) => {
+      const curr = prev[slot] || 0;
+      const next = (curr + delta + total) % total;
+      return { ...prev, [slot]: next };
+    });
+  };
 
   // Upload & Pre-processing state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -548,7 +559,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     };
 
     for (let slot = 0; slot <= 12; slot++) {
-      const candidates = photos
+      let candidates = photos
         .filter((p) => (summaries[p.id]?.monthCounts?.[slot] || 0) > 0)
         .sort((a, b) => comparePhotosForSlot(a, b, slot))
         .map(p => ({ photo: p, count: summaries[p.id]?.monthCounts?.[slot] || 0 }));
@@ -557,6 +568,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       if (manualId) {
         const manualPhoto = photos.find(p => p.id === manualId);
         if (manualPhoto) {
+          const manualCount = summaries[manualPhoto.id]?.monthCounts?.[slot] || 0;
+          candidates = [
+            { photo: manualPhoto, count: manualCount },
+            ...candidates.filter(c => c.photo.id !== manualId)
+          ];
           map[slot] = { photo: manualPhoto, isManual: true, candidates };
           continue;
         }
@@ -1044,175 +1060,216 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           )}
 
           {/* 1. DECKBLATT (HERO CARD) */}
-          <div className="bg-space-900/80 border border-white/10 rounded-2xl p-6">
-            <div className="flex items-center justify-between pb-4 mb-4 border-b border-white/10">
-              <div className="flex items-center gap-2">
-                <div className="p-2 rounded-xl bg-amber-400/10 border border-amber-400/30 text-amber-400">
-                  <BookOpen className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="font-display font-bold text-base text-white">Kalender-Deckblatt (Titelbild)</h3>
-                  <p className="text-xs text-slate-400">Das Titelmotiv des Jahreskalenders 2027</p>
-                </div>
-              </div>
-              {slotWinnerMap[0]?.isManual ? (
-                <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-mono font-bold flex items-center gap-1.5">
-                  <Check className="w-3.5 h-3.5" /> Festgelegt vom Admin
-                </span>
-              ) : slotWinnerMap[0]?.photo ? (
-                <span className="px-2.5 py-1 rounded-full bg-astro-cyan/15 border border-astro-cyan/30 text-astro-cyan text-xs font-mono">
-                  👥 Community-Favorit
-                </span>
-              ) : (
-                <span className="px-2.5 py-1 rounded-full bg-space-800 text-slate-400 text-xs font-mono">
-                  Noch unbesetzt
-                </span>
-              )}
-            </div>
+          {(() => {
+            const coverCandidates = slotWinnerMap[0]?.candidates || [];
+            const activeCoverIdx = Math.min(
+              activeCurationSlotIndex[0] || 0,
+              Math.max(0, coverCandidates.length - 1)
+            );
+            const displayedCoverItem = coverCandidates[activeCoverIdx] || null;
+            const displayedCoverPhoto = displayedCoverItem?.photo || null;
+            const displayedCoverVotes = displayedCoverItem?.count || 0;
+            const isCoverDuplicate = calendarDuplicateReport.duplicateSlots.includes(0);
 
-            {slotWinnerMap[0]?.photo ? (
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                <div className="lg:col-span-5 relative aspect-[1.4142/1] rounded-xl overflow-hidden bg-space-950 border border-white/10 flex items-center justify-center">
-                  <img
-                    src={slotWinnerMap[0].photo.image_url}
-                    alt={slotWinnerMap[0].photo.title}
-                    className="w-full h-full object-contain"
-                  />
-                  {calendarDuplicateReport.duplicateSlots.includes(0) && (
-                    <div className="absolute top-2 right-2 px-2 py-1 rounded bg-rose-500/90 text-white font-mono text-[10px] font-bold shadow-md animate-pulse">
-                      ⚠️ Duplikat
+            return (
+              <div className={`bg-space-900/80 border rounded-2xl p-6 transition-all ${
+                isCoverDuplicate
+                  ? 'border-2 border-rose-500 ring-2 ring-rose-500/30'
+                  : slotWinnerMap[0]?.isManual
+                  ? 'border-emerald-500/40'
+                  : 'border-white/10'
+              }`}>
+                <div className="flex flex-wrap items-center justify-between pb-4 mb-4 border-b border-white/10 gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-xl bg-amber-400/10 border border-amber-400/30 text-amber-400">
+                      <BookOpen className="w-5 h-5" />
                     </div>
-                  )}
-                </div>
-
-                <div className="lg:col-span-7 space-y-4">
-                  <div>
-                    <h4 className="font-display font-bold text-lg text-white">{slotWinnerMap[0].photo.title}</h4>
-                    <p className="text-xs text-slate-400">Fotograf: <strong className="text-slate-200">{slotWinnerMap[0].photo.author}</strong></p>
-                    <div className="flex flex-wrap gap-2 mt-2">
-                      <span className="px-2 py-0.5 rounded bg-amber-400/10 border border-amber-400/30 text-amber-300 text-xs font-mono">
-                        {summaries[slotWinnerMap[0].photo.id]?.monthCounts?.[0] || 0} Stimmen als Deckblatt
-                      </span>
-                      <span className="px-2 py-0.5 rounded bg-space-800 text-slate-400 text-xs font-mono">
-                        {summaries[slotWinnerMap[0].photo.id]?.upvotes || 0} Upvotes insgesamt
-                      </span>
+                    <div>
+                      <h3 className="font-display font-bold text-base text-white">Kalender-Deckblatt (Titelbild)</h3>
+                      <p className="text-xs text-slate-400">Das Titelmotiv des Jahreskalenders 2027</p>
                     </div>
                   </div>
 
-                  {calendarDuplicateReport.duplicateSlots.includes(0) && (
-                    <div className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-200 text-xs flex items-center gap-2">
-                      <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-                      <span>Dieses Bild ist auch für andere Kalendermonate ausgewählt! Lege unten ein alternatives Bild fest.</span>
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {coverCandidates.length > 1 && (
+                      <div className="flex items-center gap-1 text-xs font-mono bg-space-850 px-2.5 py-1 rounded-xl border border-white/10 text-slate-300">
+                        <button
+                          type="button"
+                          onClick={() => cycleCurationSlot(0, -1, coverCandidates.length)}
+                          className="p-1 rounded hover:bg-white/10 hover:text-white transition-colors"
+                          title="Vorheriger Deckblatt-Kandidat"
+                        >
+                          <ChevronLeft className="w-3.5 h-3.5" />
+                        </button>
+                        <span className="font-semibold text-white px-1">
+                          {activeCoverIdx + 1} / {coverCandidates.length}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => cycleCurationSlot(0, 1, coverCandidates.length)}
+                          className="p-1 rounded hover:bg-white/10 hover:text-white transition-colors"
+                          title="Nächster Deckblatt-Kandidat"
+                        >
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
 
-                  <div className="flex flex-wrap items-center gap-3">
-                    {slotWinnerMap[0].isManual ? (
-                      <button
-                        type="button"
-                        onClick={() => handleSelectSlotPhoto(0, null)}
-                        className="px-4 py-2 rounded-xl bg-space-800 hover:bg-space-700 text-slate-300 hover:text-rose-300 text-xs font-mono border border-white/10 transition-colors"
-                      >
-                        Freigeben (wieder automatischen Community-Favoriten nutzen)
-                      </button>
+                    {slotWinnerMap[0]?.isManual ? (
+                      <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-mono font-bold flex items-center gap-1.5">
+                        <Check className="w-3.5 h-3.5" /> Festgelegt vom Admin
+                      </span>
+                    ) : displayedCoverPhoto ? (
+                      <span className="px-2.5 py-1 rounded-full bg-amber-400/15 border border-amber-400/30 text-amber-300 text-xs font-mono">
+                        👥 Community-Favorit
+                      </span>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() => handleSelectSlotPhoto(0, slotWinnerMap[0].photo!.id)}
-                        className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 text-space-950 font-bold text-xs font-mono hover:from-amber-300 hover:to-amber-400 transition-all flex items-center gap-1.5 shadow-sm"
-                      >
-                        <Pin className="w-3.5 h-3.5" />
-                        <span>Dieses Bild als Deckblatt festlegen</span>
-                      </button>
+                      <span className="px-2.5 py-1 rounded-full bg-space-800 text-slate-400 text-xs font-mono">
+                        Noch unbesetzt
+                      </span>
                     )}
                   </div>
+                </div>
 
-                  {/* Alternative Candidates for Cover */}
-                  {slotWinnerMap[0].candidates.filter(c => c.photo.id !== slotWinnerMap[0].photo?.id).length > 0 && (
-                    <div className="pt-3 border-t border-white/10">
-                      <span className="text-xs font-mono text-slate-400 block mb-2">Alternative Deckblatt-Kandidaten:</span>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {slotWinnerMap[0].candidates
-                          .filter(c => c.photo.id !== slotWinnerMap[0].photo?.id)
-                          .map(({ photo: cPhoto, count }) => (
-                            <div key={cPhoto.id} className="flex items-center justify-between gap-2 p-2 rounded-xl bg-space-850 border border-white/5">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <img src={cPhoto.image_url} alt={cPhoto.title} className="w-10 h-8 object-cover rounded bg-space-900 shrink-0" />
-                                <div className="truncate text-xs">
-                                  <div className="font-medium text-white truncate">{cPhoto.title}</div>
-                                  <div className="text-[10px] text-slate-400">{count} Stimmen</div>
-                                </div>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => handleSelectSlotPhoto(0, cPhoto.id)}
-                                className="px-2.5 py-1 rounded-lg bg-space-800 hover:bg-amber-400 hover:text-space-950 text-amber-300 text-[11px] font-mono transition-colors shrink-0"
-                              >
-                                Festlegen
-                              </button>
-                            </div>
+                {displayedCoverPhoto ? (
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                    <div className="lg:col-span-6 relative aspect-[1.4142/1] rounded-xl overflow-hidden bg-space-950 border border-white/10 flex items-center justify-center">
+                      <img
+                        src={displayedCoverPhoto.image_url}
+                        alt={displayedCoverPhoto.title}
+                        className="w-full h-full object-contain"
+                      />
+                      {isCoverDuplicate && (
+                        <div className="absolute top-2.5 right-2.5 px-2 py-1 rounded bg-rose-500/95 text-white font-mono text-[10px] font-bold shadow-md animate-pulse">
+                          ⚠️ Doppelbelegung
+                        </div>
+                      )}
+                      {activeCoverIdx === 0 && !slotWinnerMap[0]?.isManual && (
+                        <div className="absolute top-2.5 left-2.5 px-2 py-1 rounded bg-amber-400/90 text-space-950 font-mono text-[10px] font-bold shadow-md">
+                          Top 1 (Community-Favorit)
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="lg:col-span-6 space-y-4">
+                      <div>
+                        <h4 className="font-display font-bold text-xl text-white">{displayedCoverPhoto.title}</h4>
+                        <p className="text-xs text-slate-400 mt-0.5">Fotograf: <strong className="text-slate-200">{displayedCoverPhoto.author}</strong></p>
+                        <div className="flex flex-wrap gap-2 mt-2.5">
+                          <span className="px-2.5 py-1 rounded-lg bg-amber-400/10 border border-amber-400/30 text-amber-300 text-xs font-mono font-semibold">
+                            {displayedCoverVotes} Stimmen als Deckblatt
+                          </span>
+                          <span className="px-2.5 py-1 rounded-lg bg-space-850 border border-white/5 text-slate-400 text-xs font-mono">
+                            {summaries[displayedCoverPhoto.id]?.upvotes || 0} Upvotes insgesamt
+                          </span>
+                        </div>
+                      </div>
+
+                      {isCoverDuplicate && (
+                        <div className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-200 text-xs flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                          <span>Dieses Bild ist auch für andere Kalendermonate aktiv! Nutze oben die Pfeile ‹ › für Alternativen.</span>
+                        </div>
+                      )}
+
+                      <div>
+                        {calendarSelections[0] === displayedCoverPhoto.id ? (
+                          <div className="flex items-center justify-between p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/35">
+                            <span className="text-xs text-emerald-300 font-mono font-bold flex items-center gap-1.5">
+                              <Check className="w-4 h-4" /> Als Deckblatt verbindlich festgelegt
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleSelectSlotPhoto(0, null)}
+                              className="px-3 py-1.5 rounded-lg bg-space-850 hover:bg-space-800 text-slate-300 hover:text-rose-300 text-xs font-mono border border-white/10 transition-colors"
+                            >
+                              Freigeben
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleSelectSlotPhoto(0, displayedCoverPhoto.id)}
+                            className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 text-space-950 font-bold text-xs font-mono hover:from-amber-300 hover:to-amber-400 transition-all flex items-center justify-center gap-2 shadow-sm"
+                          >
+                            <Pin className="w-4 h-4" />
+                            <span>Dieses Bild als Deckblatt festlegen</span>
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Manual Dropdown Selector */}
+                      <div className="pt-2 border-t border-white/10">
+                        <label className="block text-[11px] font-mono text-slate-400 mb-1">
+                          Oder beliebiges Foto aus Galerie zuweisen:
+                        </label>
+                        <select
+                          onChange={(e) => {
+                            if (e.target.value) handleSelectSlotPhoto(0, e.target.value);
+                          }}
+                          defaultValue=""
+                          className="text-xs font-mono bg-space-850 border border-white/10 rounded-xl px-3 py-2 text-slate-300 w-full focus:outline-none focus:border-amber-400"
+                        >
+                          <option value="" disabled>Foto auswählen...</option>
+                          {photos.map(p => (
+                            <option key={p.id} value={p.id}>{p.title} ({p.author})</option>
                           ))}
+                        </select>
                       </div>
                     </div>
-                  )}
-
-                  {/* Manual Dropdown Selector */}
-                  <div className="pt-2">
-                    <select
-                      onChange={(e) => {
-                        if (e.target.value) handleSelectSlotPhoto(0, e.target.value);
-                      }}
-                      defaultValue=""
-                      className="text-xs font-mono bg-space-850 border border-white/10 rounded-xl px-3 py-2 text-slate-300 w-full max-w-sm focus:outline-none focus:border-amber-400"
-                    >
-                      <option value="" disabled>Anderes Bild aus Galerie als Deckblatt wählen...</option>
-                      {photos.map(p => (
-                        <option key={p.id} value={p.id}>{p.title} ({p.author})</option>
-                      ))}
-                    </select>
                   </div>
-                </div>
+                ) : (
+                  <div className="p-8 text-center text-slate-400">
+                    <ImageOff className="w-8 h-8 text-slate-600 mx-auto mb-2" />
+                    <p className="text-sm">Noch kein Deckblatt ausgewählt.</p>
+                    <div className="mt-4 max-w-xs mx-auto">
+                      <select
+                        onChange={(e) => {
+                          if (e.target.value) handleSelectSlotPhoto(0, e.target.value);
+                        }}
+                        defaultValue=""
+                        className="text-xs font-mono bg-space-850 border border-white/10 rounded-xl px-3 py-2 text-slate-300 w-full focus:outline-none focus:border-amber-400"
+                      >
+                        <option value="" disabled>Bild als Deckblatt zuweisen...</option>
+                        {photos.map(p => (
+                          <option key={p.id} value={p.id}>{p.title} ({p.author})</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="p-8 text-center text-slate-400">
-                <ImageOff className="w-8 h-8 text-slate-600 mx-auto mb-2" />
-                <p className="text-sm">Noch kein Deckblatt ausgewählt.</p>
-                <div className="mt-4 max-w-xs mx-auto">
-                  <select
-                    onChange={(e) => {
-                      if (e.target.value) handleSelectSlotPhoto(0, e.target.value);
-                    }}
-                    defaultValue=""
-                    className="text-xs font-mono bg-space-850 border border-white/10 rounded-xl px-3 py-2 text-slate-300 w-full focus:outline-none focus:border-amber-400"
-                  >
-                    <option value="" disabled>Bild als Deckblatt zuweisen...</option>
-                    {photos.map(p => (
-                      <option key={p.id} value={p.id}>{p.title} ({p.author})</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            )}
-          </div>
+            );
+          })()}
 
-          {/* 2. DIE 12 MONATE (JANUAR - DEZEMBER) */}
+          {/* 2. DIE 12 MONATE (JANUAR - DEZEMBER) – 2-SPALTIGES LAYOUT */}
           <div>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-display font-bold text-lg text-white flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-astro-cyan" />
-                <span>Die 12 Kalendermonate (Januar – Dezember)</span>
-              </h3>
-              <span className="text-xs font-mono text-slate-400">
-                Klicke bei einem Monat auf „Festlegen“, um den Favoriten zu fixieren oder Duplikate aufzulösen
-              </span>
+            <div className="flex flex-wrap items-center justify-between mb-4 gap-2">
+              <div>
+                <h3 className="font-display font-bold text-lg text-white flex items-center gap-2">
+                  <Calendar className="w-5 h-5 text-astro-cyan" />
+                  <span>Die 12 Kalendermonate (Januar – Dezember)</span>
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Zweispaltige Großansicht: Blättere mit ‹ › durch alle Kandidaten des Monats und fixiere deinen Favoriten
+                </p>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {/* 2 COLUMNS GRID */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {MONTH_NAMES.map((mName, idx) => {
                 const monthNum = idx + 1;
-                const data = slotWinnerMap[monthNum];
+                const candidates = slotWinnerMap[monthNum]?.candidates || [];
+                const activeIdx = Math.min(
+                  activeCurationSlotIndex[monthNum] || 0,
+                  Math.max(0, candidates.length - 1)
+                );
+                const displayedItem = candidates[activeIdx] || null;
+                const displayedPhoto = displayedItem?.photo || null;
+                const displayedVotes = displayedItem?.count || 0;
                 const isDuplicate = calendarDuplicateReport.duplicateSlots.includes(monthNum);
-                const otherCandidates = data?.candidates?.filter(c => c.photo.id !== data.photo?.id) || [];
+                const isManual = slotWinnerMap[monthNum]?.isManual;
 
                 return (
                   <div
@@ -1220,147 +1277,171 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     className={`rounded-2xl border transition-all flex flex-col justify-between overflow-hidden ${
                       isDuplicate
                         ? 'border-2 border-rose-500 bg-rose-950/20 shadow-lg shadow-rose-950/40 ring-1 ring-rose-500/50'
-                        : data?.isManual
+                        : isManual
                         ? 'border-emerald-500/40 bg-space-900/95 shadow-md'
-                        : data?.photo
+                        : displayedPhoto
                         ? 'border-white/10 bg-space-900/70 hover:border-astro-cyan/30'
                         : 'border-dashed border-white/10 bg-space-950/40'
                     }`}
                   >
-                    {/* Month Card Header */}
-                    <div className={`p-3.5 border-b flex items-center justify-between text-xs font-mono ${
+                    {/* Month Card Header with Chevron Switcher */}
+                    <div className={`p-4 border-b flex flex-wrap items-center justify-between gap-2 text-xs font-mono ${
                       isDuplicate
                         ? 'bg-rose-500/20 border-rose-500/40 text-rose-300 font-bold'
-                        : data?.isManual
+                        : isManual
                         ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300 font-bold'
                         : 'bg-space-850/80 border-white/5 text-slate-300'
                     }`}>
-                      <span className="flex items-center gap-1.5 font-bold">
-                        {isDuplicate && <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />}
+                      <span className="flex items-center gap-1.5 font-bold text-sm">
+                        {isDuplicate && <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 animate-bounce" />}
                         <span>{monthNum}. {mName}</span>
                       </span>
-                      {data?.isManual ? (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/25 border border-emerald-500/50 text-emerald-300 flex items-center gap-1">
-                          <Check className="w-2.5 h-2.5" /> Fest
-                        </span>
-                      ) : data?.photo ? (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-astro-cyan/15 text-astro-cyan border border-astro-cyan/30">
-                          Community
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-slate-500">Unbesetzt</span>
-                      )}
+
+                      <div className="flex items-center gap-2">
+                        {candidates.length > 1 && (
+                          <div className="flex items-center gap-1 text-xs font-mono bg-space-900/90 px-2 py-0.5 rounded-lg border border-white/10 text-slate-300 shadow-sm">
+                            <button
+                              type="button"
+                              onClick={() => cycleCurationSlot(monthNum, -1, candidates.length)}
+                              className="p-1 rounded hover:bg-white/10 hover:text-white transition-colors"
+                              title="Vorheriger Monats-Kandidat"
+                            >
+                              <ChevronLeft className="w-3.5 h-3.5" />
+                            </button>
+                            <span className="font-semibold text-white px-1">
+                              {activeIdx + 1} / {candidates.length}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => cycleCurationSlot(monthNum, 1, candidates.length)}
+                              className="p-1 rounded hover:bg-white/10 hover:text-white transition-colors"
+                              title="Nächster Monats-Kandidat"
+                            >
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
+
+                        {isManual ? (
+                          <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/25 border border-emerald-500/50 text-emerald-300 flex items-center gap-1 font-bold">
+                            <Check className="w-3 h-3" /> Festgelegt
+                          </span>
+                        ) : displayedPhoto ? (
+                          <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-astro-cyan/15 border border-astro-cyan/30 text-astro-cyan">
+                            Community
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-slate-500">Unbesetzt</span>
+                        )}
+                      </div>
                     </div>
 
-                    {/* Month Active Photo */}
-                    <div className="p-3.5 space-y-3 flex-1 flex flex-col justify-between">
-                      {data?.photo ? (
-                        <div>
+                    {/* Month Active Large Preview */}
+                    <div className="p-4 space-y-4 flex-1 flex flex-col justify-between">
+                      {displayedPhoto ? (
+                        <div className="space-y-3">
+                          {/* Large Image */}
                           <div className="relative aspect-[1.4142/1] rounded-xl overflow-hidden bg-space-950 border border-white/10 flex items-center justify-center">
                             <img
-                              src={data.photo.image_url}
-                              alt={data.photo.title}
+                              src={displayedPhoto.image_url}
+                              alt={displayedPhoto.title}
                               className="w-full h-full object-contain"
                             />
-                            {isDuplicate && (
-                              <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded bg-rose-500 text-white font-mono text-[9px] font-bold shadow-md animate-pulse">
+                            {isDuplicate && slotWinnerMap[monthNum]?.photo?.id === displayedPhoto.id && (
+                              <div className="absolute top-2.5 right-2.5 px-2 py-1 rounded bg-rose-500/95 text-white font-mono text-[10px] font-bold shadow-md animate-pulse">
                                 ⚠️ Doppelbelegung
+                              </div>
+                            )}
+                            {activeIdx === 0 && !isManual && (
+                              <div className="absolute top-2.5 left-2.5 px-2 py-1 rounded bg-astro-cyan/90 text-space-950 font-mono text-[10px] font-bold shadow-md">
+                                Top 1 (Community-Favorit)
+                              </div>
+                            )}
+                            {calendarSelections[monthNum] === displayedPhoto.id && (
+                              <div className="absolute top-2.5 left-2.5 px-2 py-1 rounded bg-emerald-500/90 text-space-950 font-mono text-[10px] font-bold shadow-md flex items-center gap-1">
+                                <Check className="w-3 h-3" /> Fest ausgewählt
                               </div>
                             )}
                           </div>
 
-                          <div className="mt-2.5">
-                            <div className="font-semibold text-xs text-white truncate" title={data.photo.title}>
-                              {data.photo.title}
+                          {/* Details below Image */}
+                          <div>
+                            <div className="font-bold text-base text-white truncate" title={displayedPhoto.title}>
+                              {displayedPhoto.title}
                             </div>
-                            <div className="text-[11px] text-slate-400 truncate">
-                              Foto: {data.photo.author}
+                            <div className="text-xs text-slate-400 truncate mt-0.5">
+                              Fotograf: <strong className="text-slate-200">{displayedPhoto.author}</strong>
                             </div>
-                            <div className="flex items-center justify-between text-[10px] font-mono mt-1 text-slate-400">
-                              <span className="text-astro-cyan font-bold">
-                                {summaries[data.photo.id]?.monthCounts?.[monthNum] || 0} Stimmen für {getMonthShortLabel(monthNum)}
+                            <div className="flex flex-wrap items-center gap-2 mt-2">
+                              <span className="px-2.5 py-0.5 rounded-lg bg-astro-cyan/10 border border-astro-cyan/30 text-astro-cyan text-xs font-mono font-semibold">
+                                {displayedVotes} Stimmen für {getMonthShortLabel(monthNum)}
                               </span>
-                              <span>
-                                {summaries[data.photo.id]?.upvotes || 0} Upvotes
+                              <span className="px-2.5 py-0.5 rounded-lg bg-space-850 border border-white/5 text-slate-400 text-xs font-mono">
+                                {summaries[displayedPhoto.id]?.upvotes || 0} Upvotes insgesamt
                               </span>
                             </div>
                           </div>
 
+                          {/* Duplicate Warning */}
+                          {isDuplicate && slotWinnerMap[monthNum]?.photo?.id === displayedPhoto.id && (
+                            <div className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-200 text-xs flex items-center gap-2 animate-pulse">
+                              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                              <span>Dieses Foto ist in mehreren Monaten aktiv! Nutze oben ‹ › für Alternativen und klicke auf Festlegen.</span>
+                            </div>
+                          )}
+
                           {/* Quick Pin / Release Action */}
-                          <div className="mt-2.5">
-                            {data.isManual ? (
-                              <button
-                                type="button"
-                                onClick={() => handleSelectSlotPhoto(monthNum, null)}
-                                className="w-full py-1.5 rounded-lg bg-space-850 hover:bg-space-800 text-slate-400 hover:text-rose-300 border border-white/10 text-xs font-mono transition-colors"
-                              >
-                                Freigeben (Community nutzen)
-                              </button>
+                          <div>
+                            {calendarSelections[monthNum] === displayedPhoto.id ? (
+                              <div className="flex items-center justify-between p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/35">
+                                <span className="text-xs text-emerald-300 font-mono font-bold flex items-center gap-1.5">
+                                  <Check className="w-4 h-4" /> Als {mName} verbindlich festgelegt
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSelectSlotPhoto(monthNum, null)}
+                                  className="px-3 py-1 rounded-lg bg-space-850 hover:bg-space-800 text-slate-300 hover:text-rose-300 text-xs font-mono transition-colors border border-white/10"
+                                >
+                                  Freigeben
+                                </button>
+                              </div>
                             ) : (
                               <button
                                 type="button"
-                                onClick={() => handleSelectSlotPhoto(monthNum, data.photo!.id)}
-                                className="w-full py-1.5 rounded-lg bg-astro-cyan hover:bg-cyan-300 text-space-950 font-bold text-xs font-mono transition-colors flex items-center justify-center gap-1.5 shadow-sm"
+                                onClick={() => handleSelectSlotPhoto(monthNum, displayedPhoto.id)}
+                                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-astro-cyan to-astro-blue hover:brightness-110 text-space-950 font-bold text-xs font-mono transition-all flex items-center justify-center gap-2 shadow-sm"
                               >
-                                <Pin className="w-3 h-3" />
-                                <span>Als {getMonthShortLabel(monthNum)} festlegen</span>
+                                <Pin className="w-3.5 h-3.5" />
+                                <span>Dieses Bild für {mName} festlegen</span>
                               </button>
                             )}
                           </div>
                         </div>
                       ) : (
-                        <div className="aspect-[1.4142/1] rounded-xl border border-dashed border-white/10 flex flex-col items-center justify-center p-3 text-center text-slate-500 text-xs">
-                          <ImageOff className="w-6 h-6 mb-1 text-slate-600" />
-                          <span>Noch kein Bild zugewiesen</span>
+                        <div className="aspect-[1.4142/1] rounded-xl border border-dashed border-white/10 flex flex-col items-center justify-center p-4 text-center text-slate-500 text-xs">
+                          <ImageOff className="w-8 h-8 mb-2 text-slate-600" />
+                          <span className="font-medium text-slate-400">Noch kein Bild für {mName} vorgeschlagen</span>
+                          <span className="text-[11px] text-slate-500 mt-0.5">Wähle unten ein Foto aus der Galerie aus.</span>
                         </div>
                       )}
 
-                      {/* Alternatives / Candidates with votes */}
-                      <div className="pt-2 border-t border-white/10 space-y-2">
-                        {otherCandidates.length > 0 && (
-                          <div>
-                            <span className="text-[10px] font-mono text-slate-400 block mb-1.5">
-                              Andere Vorschläge für {mName}:
-                            </span>
-                            <div className="space-y-1.5 max-h-36 overflow-y-auto pr-0.5">
-                              {otherCandidates.map(({ photo: cPhoto, count }) => (
-                                <div key={cPhoto.id} className="flex items-center justify-between gap-1.5 p-1.5 rounded-lg bg-space-850 border border-white/5 text-[11px]">
-                                  <div className="flex items-center gap-1.5 min-w-0">
-                                    <img src={cPhoto.image_url} alt={cPhoto.title} className="w-8 h-6 object-cover rounded bg-space-900 shrink-0" />
-                                    <div className="truncate">
-                                      <div className="font-medium text-white truncate text-[11px]">{cPhoto.title}</div>
-                                      <div className="text-[9px] text-slate-400">{count} Stimmen</div>
-                                    </div>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSelectSlotPhoto(monthNum, cPhoto.id)}
-                                    className="px-2 py-0.5 rounded bg-space-800 hover:bg-astro-cyan hover:text-space-950 text-astro-cyan text-[10px] font-mono transition-colors shrink-0"
-                                    title={`Foto "${cPhoto.title}" als verbindliches Bild für ${mName} festlegen`}
-                                  >
-                                    Festlegen
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Manual photo select dropdown */}
-                        <div>
-                          <select
-                            onChange={(e) => {
-                              if (e.target.value) handleSelectSlotPhoto(monthNum, e.target.value);
-                            }}
-                            defaultValue=""
-                            className="w-full text-[10px] font-mono bg-space-850 border border-white/10 rounded-lg px-2 py-1 text-slate-300 focus:outline-none focus:border-astro-cyan truncate"
-                          >
-                            <option value="" disabled>Aus allen Fotos wählen...</option>
-                            {photos.map(p => (
-                              <option key={p.id} value={p.id}>{p.title} ({p.author})</option>
-                            ))}
-                          </select>
-                        </div>
+                      {/* Manual photo select dropdown */}
+                      <div className="pt-2 border-t border-white/10">
+                        <label className="block text-[11px] font-mono text-slate-400 mb-1">
+                          Anderes Foto aus Galerie zuweisen:
+                        </label>
+                        <select
+                          onChange={(e) => {
+                            if (e.target.value) handleSelectSlotPhoto(monthNum, e.target.value);
+                          }}
+                          defaultValue=""
+                          className="w-full text-xs font-mono bg-space-850 border border-white/10 rounded-xl px-3 py-2 text-slate-300 focus:outline-none focus:border-astro-cyan truncate"
+                        >
+                          <option value="" disabled>Aus allen Galerie-Fotos wählen...</option>
+                          {photos.map(p => (
+                            <option key={p.id} value={p.id}>{p.title} ({p.author})</option>
+                          ))}
+                        </select>
                       </div>
 
                     </div>

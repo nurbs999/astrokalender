@@ -263,18 +263,28 @@ CREATE TABLE IF NOT EXISTS public.calendar_selections (
 -- RLS aktivieren
 ALTER TABLE public.calendar_selections ENABLE ROW LEVEL SECURITY;
 
--- Jeder darf die festgelegte Kalenderauswahl einsehen
-DROP POLICY IF EXISTS "Kalender-Auswahl öffentlich lesbar" ON public.calendar_selections;
-CREATE POLICY "Kalender-Auswahl öffentlich lesbar"
-    ON public.calendar_selections FOR SELECT
-    TO anon, authenticated
-    USING (true);
+-- Policies ohne DROP anlegen (verhindert die Supabase "destructive operations" Warnung):
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE tablename = 'calendar_selections' AND policyname = 'Kalender-Auswahl öffentlich lesbar'
+    ) THEN
+        CREATE POLICY "Kalender-Auswahl öffentlich lesbar"
+            ON public.calendar_selections FOR SELECT
+            TO anon, authenticated
+            USING (true);
+    END IF;
 
--- Festlegungen speichern / ändern / löschen
-DROP POLICY IF EXISTS "Kalender-Auswahl verwalten" ON public.calendar_selections;
-CREATE POLICY "Kalender-Auswahl verwalten"
-    ON public.calendar_selections FOR ALL
-    TO anon, authenticated
-    USING (true)
-    WITH CHECK (true);
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE tablename = 'calendar_selections' AND policyname = 'Kalender-Auswahl verwalten'
+    ) THEN
+        CREATE POLICY "Kalender-Auswahl verwalten"
+            ON public.calendar_selections FOR ALL
+            TO anon, authenticated
+            USING (true)
+            WITH CHECK (true);
+    END IF;
+END $$;
 
