@@ -76,3 +76,10 @@ export function getMonthShortLabel(monthNum: number): string {
   if (monthNum === 0) return 'Deckbl.';
   return MONTH_SHORT_NAMES[monthNum - 1] || `${monthNum}`;
 }
+
+export interface CalendarSelection {
+  slot: number; // 0 = Deckblatt, 1..12 = Monate
+  photo_id: string;
+  updated_at?: string;
+}
+

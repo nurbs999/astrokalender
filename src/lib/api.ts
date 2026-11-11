@@ -868,4 +868,99 @@ export async function updateAdminPasswordInSupabase(newPassword: string): Promis
   }
 }
 
+// ==========================================
+// CALENDAR CURATION & OVERRIDES
+// ==========================================
+
+const LS_CALENDAR_SELECTIONS_KEY = 'astrovote_calendar_selections_v1';
+
+export async function fetchCalendarSelections(): Promise<Record<number, string>> {
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      const { data, error } = await client.from('calendar_selections').select('slot, photo_id');
+      if (!error && Array.isArray(data)) {
+        const result: Record<number, string> = {};
+        data.forEach((row: { slot: number; photo_id: string }) => {
+          if (row.photo_id && row.slot !== undefined && row.slot !== null) {
+            result[row.slot] = row.photo_id;
+          }
+        });
+        localStorage.setItem(LS_CALENDAR_SELECTIONS_KEY, JSON.stringify(result));
+        return result;
+      }
+      if (error) {
+        console.warn('Could not fetch calendar_selections from Supabase (falling back to localStorage):', error.message);
+      }
+    } catch (err) {
+      console.warn('Error fetching calendar_selections from Supabase:', err);
+    }
+  }
+
+  try {
+    const raw = localStorage.getItem(LS_CALENDAR_SELECTIONS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+export async function saveCalendarSelection(slot: number, photoId: string | null): Promise<boolean> {
+  let localSelections: Record<number, string> = {};
+  try {
+    const raw = localStorage.getItem(LS_CALENDAR_SELECTIONS_KEY);
+    localSelections = raw ? JSON.parse(raw) : {};
+  } catch {}
+
+  if (photoId) {
+    localSelections[slot] = photoId;
+  } else {
+    delete localSelections[slot];
+  }
+  localStorage.setItem(LS_CALENDAR_SELECTIONS_KEY, JSON.stringify(localSelections));
+
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      if (photoId) {
+        const { error } = await client.from('calendar_selections').upsert({
+          slot,
+          photo_id: photoId,
+          updated_at: new Date().toISOString()
+        });
+        if (error) {
+          console.warn('Error saving calendar_selections in Supabase:', error.message);
+          return false;
+        }
+      } else {
+        const { error } = await client.from('calendar_selections').delete().eq('slot', slot);
+        if (error) {
+          console.warn('Error deleting calendar_selections in Supabase:', error.message);
+          return false;
+        }
+      }
+      return true;
+    } catch (err) {
+      console.warn('Error updating calendar_selections in Supabase:', err);
+      return false;
+    }
+  }
+  return true;
+}
+
+export async function clearAllCalendarSelections(): Promise<boolean> {
+  localStorage.removeItem(LS_CALENDAR_SELECTIONS_KEY);
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      await client.from('calendar_selections').delete().gte('slot', 0);
+    } catch (err) {
+      console.warn('Error clearing calendar_selections in Supabase:', err);
+      return false;
+    }
+  }
+  return true;
+}
+
+
 

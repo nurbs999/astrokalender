@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, CalendarDays, Sparkles, User, Users, BookOpen, Maximize2, ImageOff, ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react';
-import { Photo, Vote, PhotoVoteSummary, MONTH_NAMES } from '../types';
+import { X, CalendarDays, Sparkles, User, Users, BookOpen, Maximize2, ImageOff, ChevronLeft, ChevronRight, AlertTriangle, Pin, Check } from 'lucide-react';
+import { Photo, Vote, PhotoVoteSummary, MONTH_NAMES, getMonthShortLabel } from '../types';
 
 interface CalendarPreviewModalProps {
   isOpen: boolean;
   photos: Photo[];
   userVotes: Record<string, Vote>;
   summaries: Record<string, PhotoVoteSummary>;
+  calendarSelections?: Record<number, string>;
+  isAdmin?: boolean;
+  onSaveSelection?: (slot: number, photoId: string | null) => Promise<void>;
   onClose: () => void;
   onOpenLightbox: (photo: Photo) => void;
 }
@@ -16,6 +19,9 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
   photos,
   userVotes,
   summaries,
+  calendarSelections = {},
+  isAdmin = false,
+  onSaveSelection,
   onClose,
   onOpenLightbox,
 }) => {
@@ -81,16 +87,25 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
     } else {
       // Community-Modus: Für jeden Slot (0..12) alle Bilder mit Stimmen für diesen Monat sortiert nach Monatsstimmen
       for (let m = 0; m <= 12; m++) {
-        const candidates = photos
+        let candidates = photos
           .filter((p) => (summaries[p.id]?.monthCounts?.[m] || 0) > 0)
           .sort((a, b) => comparePhotosForSlot(a, b, m));
+
+        // Falls ein Bild vom Admin fest für diesen Monat ausgewählt wurde, an Position 1 setzen!
+        const fixedPhotoId = calendarSelections[m];
+        if (fixedPhotoId) {
+          const fixedPhoto = photos.find((p) => p.id === fixedPhotoId);
+          if (fixedPhoto) {
+            candidates = [fixedPhoto, ...candidates.filter((p) => p.id !== fixedPhotoId)];
+          }
+        }
 
         map[m] = candidates;
       }
     }
 
     return map;
-  }, [viewMode, userVotes, photos, summaries]);
+  }, [viewMode, userVotes, photos, summaries, calendarSelections]);
 
   const coverPhotos = slotPhotosMap[0] || [];
   const activeCoverIdx = Math.min(activeSlotIndex[0] || 0, Math.max(0, coverPhotos.length - 1));
@@ -190,6 +205,12 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
                   <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 flex items-center gap-1 font-semibold animate-pulse">
                     <AlertTriangle className="w-3.5 h-3.5" />
                     <span>{duplicateSlots.length} Doppelbelegungen!</span>
+                  </span>
+                )}
+                {isAdmin && (
+                  <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-astro-gold/20 text-astro-gold border border-astro-gold/40 flex items-center gap-1 font-semibold">
+                    <Pin className="w-3 h-3" />
+                    <span>Admin-Kuration aktiv</span>
                   </span>
                 )}
               </h2>
@@ -358,6 +379,39 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
                         <span><strong>Doppelbelegung:</strong> Dasselbe Bild ist auch für {getConflictNames(0)} ausgewählt!</span>
                       </div>
                     )}
+
+                    {isAdmin && (
+                      <div className="mt-3 pt-2.5 border-t border-white/10 flex flex-wrap items-center justify-between gap-2">
+                        {calendarSelections[0] === currentCoverPhoto.id ? (
+                          <div className="flex items-center justify-between w-full">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-mono font-bold">
+                              <Check className="w-3.5 h-3.5" /> Festgelegtes Titelbild
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => onSaveSelection?.(0, null)}
+                              className="text-xs text-slate-400 hover:text-rose-300 underline font-mono transition-colors"
+                            >
+                              Freigeben
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between w-full gap-2">
+                            <span className="text-[11px] font-mono text-slate-400">
+                              {calendarSelections[0] ? 'Anderes Bild festgelegt' : 'Community-Favorit'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => onSaveSelection?.(0, currentCoverPhoto.id)}
+                              className="px-3 py-1 rounded-lg bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-space-950 font-bold text-xs font-mono transition-all flex items-center gap-1.5 shadow-sm"
+                            >
+                              <Pin className="w-3.5 h-3.5" />
+                              <span>Dieses Bild als Deckblatt festlegen</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="aspect-[1.4142/1] w-full rounded-xl border border-dashed border-white/10 bg-space-950/50 flex flex-col items-center justify-center p-4 text-center">
@@ -366,6 +420,22 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
                     <p className="text-[11px] text-slate-500 mt-0.5">
                       Wähle bei deinem Favoriten in der Galerie „📖 Deckblatt (Titelbild)“ aus.
                     </p>
+                    {isAdmin && (
+                      <div className="mt-3 w-full max-w-xs">
+                        <select
+                          onChange={(e) => {
+                            if (e.target.value) onSaveSelection?.(0, e.target.value);
+                          }}
+                          defaultValue=""
+                          className="w-full text-xs font-mono bg-space-850 border border-white/15 rounded-lg px-2.5 py-1.5 text-white focus:outline-none focus:border-amber-400"
+                        >
+                          <option value="" disabled>Bild manuell als Deckblatt zuweisen...</option>
+                          {photos.map(p => (
+                            <option key={p.id} value={p.id}>{p.title} ({p.author})</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -499,12 +569,60 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
                                 <span className="truncate">Doppelbelegung mit {getConflictNames(monthNum)}</span>
                               </div>
                             )}
+
+                            {isAdmin && (
+                              <div className="mt-2 pt-2 border-t border-white/10 flex flex-wrap items-center justify-between gap-1.5">
+                                {calendarSelections[monthNum] === activePhoto.id ? (
+                                  <div className="flex items-center justify-between w-full">
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[10px] font-mono font-bold">
+                                      <Check className="w-2.5 h-2.5" /> Festgelegt
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => onSaveSelection?.(monthNum, null)}
+                                      className="text-[10px] text-slate-400 hover:text-rose-300 underline font-mono transition-colors"
+                                    >
+                                      Freigeben
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center justify-between w-full gap-1">
+                                    <span className="text-[10px] font-mono text-slate-400 truncate">
+                                      {calendarSelections[monthNum] ? 'Anderes Bild' : 'Community'}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => onSaveSelection?.(monthNum, activePhoto.id)}
+                                      className="px-2 py-0.5 rounded bg-astro-cyan hover:bg-cyan-300 text-space-950 font-bold text-[10px] font-mono transition-colors flex items-center gap-1 shadow-sm shrink-0"
+                                      title={`Dieses Bild fest für ${monthName} auswählen`}
+                                    >
+                                      <Pin className="w-2.5 h-2.5" />
+                                      <span>Festlegen</span>
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                         </>
                       ) : (
                         <div className="aspect-[1.4142/1] w-full rounded-lg border border-dashed border-white/5 bg-space-900/30 flex flex-col items-center justify-center p-2 text-center">
                           <ImageOff className="w-5 h-5 text-slate-700 mb-1" />
-                          <span className="text-[11px] text-slate-500 font-mono">Noch unbesetzt</span>
+                          <span className="text-[11px] text-slate-500 font-mono mb-1.5">Noch unbesetzt</span>
+                          {isAdmin && (
+                            <select
+                              onChange={(e) => {
+                                if (e.target.value) onSaveSelection?.(monthNum, e.target.value);
+                              }}
+                              defaultValue=""
+                              className="w-full text-[10px] font-mono bg-space-850 border border-white/10 rounded px-1.5 py-1 text-slate-300 focus:outline-none focus:border-astro-cyan"
+                            >
+                              <option value="" disabled>Bild zuweisen...</option>
+                              {photos.map(p => (
+                                <option key={p.id} value={p.id}>{p.title} ({p.author})</option>
+                              ))}
+                            </select>
+                          )}
                         </div>
                       )}
                     </div>

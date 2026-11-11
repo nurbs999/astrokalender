@@ -4,10 +4,11 @@ import {
   Sparkles, Filter, CheckCircle2, Circle, ArrowUpDown,
   RefreshCw, CalendarDays, Rocket, AlertCircle, MailCheck
 } from 'lucide-react';
-import { Photo, Voter, Vote, Rating, PhotoVoteSummary } from './types';
+import { Photo, Voter, Vote, Rating, PhotoVoteSummary, getMonthLabel } from './types';
 import {
   fetchPhotos, fetchUserVotes, saveVote, fetchAllVotesSummary,
-  isUsingLiveSupabase, registerOrUpdateVoter, getSupabaseClient, fetchVoter
+  isUsingLiveSupabase, registerOrUpdateVoter, getSupabaseClient, fetchVoter,
+  fetchCalendarSelections, saveCalendarSelection
 } from './lib/api';
 import { Navbar } from './components/Navbar';
 import { PhotoCard } from './components/PhotoCard';
@@ -26,6 +27,7 @@ export function App() {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [loading, setLoading] = useState(true);
   const [summaries, setSummaries] = useState<Record<string, PhotoVoteSummary>>({});
+  const [calendarSelections, setCalendarSelections] = useState<Record<number, string>>({});
 
   // Voter & Votes
   const [currentVoter, setCurrentVoter] = useState<Voter | null>(() => {
@@ -93,12 +95,14 @@ export function App() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [fetchedPhotos, summaryMap] = await Promise.all([
+      const [fetchedPhotos, summaryMap, calSelections] = await Promise.all([
         fetchPhotos(),
         fetchAllVotesSummary(),
+        fetchCalendarSelections(),
       ]);
       setPhotos(fetchedPhotos);
       setSummaries(summaryMap);
+      setCalendarSelections(calSelections);
     } catch (err) {
       console.error('Error loading initial data:', err);
       addToast('Fehler beim Laden der Fotos', 'error');
@@ -106,6 +110,21 @@ export function App() {
       setLoading(false);
     }
   }, []);
+
+  const handleSaveCalendarSelection = async (slot: number, photoId: string | null) => {
+    await saveCalendarSelection(slot, photoId);
+    setCalendarSelections(prev => {
+      const next = { ...prev };
+      if (photoId) next[slot] = photoId;
+      else delete next[slot];
+      return next;
+    });
+    addToast(
+      photoId
+        ? `📌 Bild für ${getMonthLabel(slot)} fest ausgewählt.`
+        : `Monatsauswahl für ${getMonthLabel(slot)} freigegeben (automatisch).`
+    );
+  };
 
   useEffect(() => {
     loadData();
@@ -422,7 +441,7 @@ export function App() {
     v => v.rating !== 'none' || v.suggested_month !== null
   ).length;
 
-  // Set of slots (0 = Deckblatt, 1..12 = Months) that have at least one vote globally across all photos
+  // Set of slots (0 = Deckblatt, 1..12 = Months) that have at least one vote globally across all photos or are curated
   const globalVotedMonths = useMemo(() => {
     const set = new Set<number>();
     Object.values(summaries).forEach(s => {
@@ -437,8 +456,17 @@ export function App() {
         });
       }
     });
+
+    // Also include slots that are curated by the admin
+    Object.keys(calendarSelections).forEach((slotStr) => {
+      const slot = parseInt(slotStr, 10);
+      if (slot >= 0 && slot <= 12 && calendarSelections[slot]) {
+        set.add(slot);
+      }
+    });
+
     return Array.from(set);
-  }, [summaries]);
+  }, [summaries, calendarSelections]);
 
   // Uniqueness verification: Find any slots (0 = Deckblatt, 1..12 = Monate) where the same photo is chosen multiple times
   const globalDuplicateMonths = useMemo(() => {
@@ -454,6 +482,14 @@ export function App() {
 
     const slotToPhotoId: Record<number, string> = {};
     for (let slot = 0; slot <= 12; slot++) {
+      // 1. If admin curated this slot, use the curated photo!
+      const curatedId = calendarSelections[slot];
+      if (curatedId && photos.some(p => p.id === curatedId)) {
+        slotToPhotoId[slot] = curatedId;
+        continue;
+      }
+
+      // 2. Otherwise determine community vote winner
       const candidates = photos
         .filter((p) => (summaries[p.id]?.monthCounts?.[slot] || 0) > 0)
         .sort((a, b) => comparePhotosForSlot(a, b, slot));
@@ -478,7 +514,7 @@ export function App() {
     });
 
     return Array.from(duplicates);
-  }, [photos, summaries]);
+  }, [photos, summaries, calendarSelections]);
 
   return (
     <div className="min-h-screen flex flex-col bg-space-950 text-slate-100 selection:bg-astro-cyan/30">
@@ -504,6 +540,9 @@ export function App() {
           <AdminDashboard
             photos={photos}
             onPhotosUpdated={loadData}
+            calendarSelections={calendarSelections}
+            onSaveCalendarSelection={handleSaveCalendarSelection}
+            onOpenCalendarModal={() => setIsCalendarModalOpen(true)}
             onExit={() => {
               window.location.hash = '';
               setIsAdminMode(false);
@@ -697,6 +736,9 @@ export function App() {
         photos={photos}
         userVotes={userVotes}
         summaries={summaries}
+        calendarSelections={calendarSelections}
+        isAdmin={sessionStorage.getItem('astrovote_admin_auth') === 'true'}
+        onSaveSelection={handleSaveCalendarSelection}
         onClose={() => setIsCalendarModalOpen(false)}
         onOpenLightbox={(p) => setActiveLightboxPhoto(p)}
       />

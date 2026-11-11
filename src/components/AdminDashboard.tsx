@@ -3,20 +3,24 @@ import {
   Upload, BarChart3, Users, Image as ImageIcon, Trash2, Edit2, Check,
   Lock, ArrowLeft, AlertCircle, FileCheck, RefreshCw, Sparkles, Key, DownloadCloud, X,
   ShieldCheck, AlertTriangle, FileSpreadsheet, ChevronDown, ChevronUp, Search, ThumbsUp, Calendar,
-  CheckCircle2
+  CheckCircle2, Pin, CalendarDays, RotateCcw, Maximize2, BookOpen, ImageOff
 } from 'lucide-react';
-import { Photo, PhotoVoteSummary, VoterStats, DetailedVote, MONTH_NAMES, getMonthLabel } from '../types';
+import { Photo, PhotoVoteSummary, VoterStats, DetailedVote, MONTH_NAMES, getMonthLabel, getMonthShortLabel } from '../types';
 import { compressImage, CompressionResult, DINA3_MAX_WIDTH, DINA3_MAX_HEIGHT } from '../lib/imageCompressor';
 import {
   uploadPhoto, updatePhoto, deletePhoto, fetchAllVotesSummary,
   fetchVotersList, fetchAllVotesDetailed, seedDemoPhotosToSupabase, isUsingLiveSupabase,
-  uploadImageFile, deleteStorageImage, verifyAdminPasswordWithSupabase, updateAdminPasswordInSupabase
+  uploadImageFile, deleteStorageImage, verifyAdminPasswordWithSupabase, updateAdminPasswordInSupabase,
+  fetchCalendarSelections, saveCalendarSelection, clearAllCalendarSelections
 } from '../lib/api';
 
 interface AdminDashboardProps {
   photos: Photo[];
   onPhotosUpdated: () => void;
   onExit: () => void;
+  calendarSelections?: Record<number, string>;
+  onSaveCalendarSelection?: (slot: number, photoId: string | null) => Promise<void>;
+  onOpenCalendarModal?: () => void;
 }
 
 const LS_ADMIN_PASSWORD_KEY = 'astrovote_admin_custom_pin';
@@ -31,6 +35,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   photos,
   onPhotosUpdated,
   onExit,
+  calendarSelections: propsCalendarSelections,
+  onSaveCalendarSelection,
+  onOpenCalendarModal,
 }) => {
   // Authentication state
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -39,6 +46,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [passwordInput, setPasswordInput] = useState('');
   const [authError, setAuthError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  // Calendar Selections (curated photos for slot 0..12)
+  const [calendarSelections, setCalendarSelections] = useState<Record<number, string>>(
+    propsCalendarSelections || {}
+  );
+
+  useEffect(() => {
+    if (propsCalendarSelections) {
+      setCalendarSelections(propsCalendarSelections);
+    }
+  }, [propsCalendarSelections]);
 
   // Password change modal state
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
@@ -50,8 +68,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isSeeding, setIsSeeding] = useState(false);
   const [seedSuccess, setSeedSuccess] = useState('');
 
-  // Tab State: 'ranking' | 'votes_audit' | 'voters' | 'upload' | 'manage'
-  const [activeTab, setActiveTab] = useState<'ranking' | 'votes_audit' | 'voters' | 'upload' | 'manage'>('ranking');
+  // Tab State: 'ranking' | 'calendar_curation' | 'votes_audit' | 'voters' | 'upload' | 'manage'
+  const [activeTab, setActiveTab] = useState<'ranking' | 'calendar_curation' | 'votes_audit' | 'voters' | 'upload' | 'manage'>('ranking');
 
   // Stats and summaries
   const [summaries, setSummaries] = useState<Record<string, PhotoVoteSummary>>({});
@@ -92,19 +110,43 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const loadDashboardData = async () => {
     setLoadingStats(true);
     try {
-      const [sumRes, votersRes, detailedVotesRes] = await Promise.all([
+      const [sumRes, votersRes, detailedVotesRes, calRes] = await Promise.all([
         fetchAllVotesSummary(),
         fetchVotersList(),
         fetchAllVotesDetailed(),
+        fetchCalendarSelections(),
       ]);
       setSummaries(sumRes);
       setVoters(votersRes);
       setAllDetailedVotes(detailedVotesRes);
+      setCalendarSelections(calRes);
     } catch (err) {
       console.error('Error loading dashboard data:', err);
     } finally {
       setLoadingStats(false);
     }
+  };
+
+  const handleSelectSlotPhoto = async (slot: number, photoId: string | null) => {
+    if (onSaveCalendarSelection) {
+      await onSaveCalendarSelection(slot, photoId);
+    } else {
+      await saveCalendarSelection(slot, photoId);
+      onPhotosUpdated();
+    }
+    setCalendarSelections(prev => {
+      const next = { ...prev };
+      if (photoId) next[slot] = photoId;
+      else delete next[slot];
+      return next;
+    });
+  };
+
+  const handleResetAllSelections = async () => {
+    if (!confirm('Möchtest du wirklich alle manuellen Kalender-Festlegungen zurücksetzen? Der Kalender richtet sich dann wieder rein nach den Stimmen der Community.')) return;
+    await clearAllCalendarSelections();
+    setCalendarSelections({});
+    onPhotosUpdated();
   };
 
   useEffect(() => {
@@ -491,6 +533,72 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     });
   }, [photos, votesByPhoto, auditOnlyWithVotes, auditMonthFilter, auditSearch]);
 
+  // Calendar Curation Winner Map (Slot 0..12 -> Active Photo, candidates and status)
+  const slotWinnerMap = useMemo(() => {
+    const map: Record<number, { photo: Photo | null; isManual: boolean; candidates: { photo: Photo; count: number }[] }> = {};
+
+    const comparePhotosForSlot = (pA: Photo, pB: Photo, slot: number) => {
+      const countA = summaries[pA.id]?.monthCounts?.[slot] || 0;
+      const countB = summaries[pB.id]?.monthCounts?.[slot] || 0;
+      if (countB !== countA) return countB - countA;
+      const upA = summaries[pA.id]?.upvotes || 0;
+      const upB = summaries[pB.id]?.upvotes || 0;
+      if (upB !== upA) return upB - upA;
+      return pA.title.localeCompare(pB.title);
+    };
+
+    for (let slot = 0; slot <= 12; slot++) {
+      const candidates = photos
+        .filter((p) => (summaries[p.id]?.monthCounts?.[slot] || 0) > 0)
+        .sort((a, b) => comparePhotosForSlot(a, b, slot))
+        .map(p => ({ photo: p, count: summaries[p.id]?.monthCounts?.[slot] || 0 }));
+
+      const manualId = calendarSelections[slot];
+      if (manualId) {
+        const manualPhoto = photos.find(p => p.id === manualId);
+        if (manualPhoto) {
+          map[slot] = { photo: manualPhoto, isManual: true, candidates };
+          continue;
+        }
+      }
+
+      const topCandidate = candidates[0]?.photo || null;
+      map[slot] = { photo: topCandidate, isManual: false, candidates };
+    }
+
+    return map;
+  }, [photos, summaries, calendarSelections]);
+
+  // Duplicate calculation across all 13 slots
+  const calendarDuplicateReport = useMemo(() => {
+    const photoToSlots: Record<string, number[]> = {};
+    Object.entries(slotWinnerMap).forEach(([slotStr, data]) => {
+      if (data.photo) {
+        const slot = parseInt(slotStr, 10);
+        if (!photoToSlots[data.photo.id]) photoToSlots[data.photo.id] = [];
+        photoToSlots[data.photo.id].push(slot);
+      }
+    });
+
+    const duplicateSlots = new Set<number>();
+    const conflicts: { photo: Photo; slots: number[] }[] = [];
+
+    Object.entries(photoToSlots).forEach(([photoId, slots]) => {
+      if (slots.length > 1) {
+        slots.forEach(s => duplicateSlots.add(s));
+        const ph = photos.find(p => p.id === photoId);
+        if (ph) conflicts.push({ photo: ph, slots });
+      }
+    });
+
+    return {
+      hasDuplicates: duplicateSlots.size > 0,
+      totalDuplicates: duplicateSlots.size,
+      duplicateSlots: Array.from(duplicateSlots),
+      conflicts,
+    };
+  }, [slotWinnerMap, photos]);
+
   // 1. Password / PIN Lock screen
   if (!isAuthenticated) {
     return (
@@ -655,6 +763,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </button>
 
         <button
+          onClick={() => setActiveTab('calendar_curation')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium transition-all ${activeTab === 'calendar_curation'
+            ? 'bg-gradient-to-r from-amber-400 to-amber-500 text-space-950 font-bold shadow-sm'
+            : 'bg-space-850 hover:bg-space-800 text-slate-300 border border-white/5'
+            }`}
+        >
+          <CalendarDays className="w-4 h-4" />
+          <span>Kalender-Kuration & Monate (13)</span>
+          {calendarDuplicateReport.hasDuplicates ? (
+            <span className="px-1.5 py-0.2 rounded-full bg-rose-500 text-white font-mono text-[10px] font-bold animate-pulse">
+              {calendarDuplicateReport.duplicateSlots.length} Duplikat{calendarDuplicateReport.duplicateSlots.length > 1 ? 'e' : ''}!
+            </span>
+          ) : (
+            <span className="px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 font-mono text-[10px]">
+              ✓
+            </span>
+          )}
+        </button>
+
+        <button
           onClick={() => setActiveTab('votes_audit')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium transition-all ${activeTab === 'votes_audit'
             ? 'bg-astro-cyan text-space-950 font-bold shadow-glow-cyan'
@@ -815,6 +943,427 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
                     </div>
 
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: KALENDER-KURATION & MONATE */}
+      {activeTab === 'calendar_curation' && (
+        <div className="space-y-6 animate-fade-in">
+          {/* Header Box */}
+          <div className="bg-space-900/80 border border-white/10 rounded-2xl p-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-white/10">
+              <div>
+                <h2 className="font-display font-semibold text-lg text-white mb-1 flex items-center gap-2">
+                  <CalendarDays className="w-5 h-5 text-amber-400" />
+                  Kalender-Kuration & Verbindliche Monatsauswahl
+                </h2>
+                <p className="text-xs text-slate-400">
+                  Lege fest, welches Foto verbindlich für das Deckblatt und die 12 Kalendermonate genommen wird. Bei Duplikaten (wenn ein Bild in mehreren Monaten führend ist) kannst du hier den Sieger bestimmen.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                {onOpenCalendarModal && (
+                  <button
+                    type="button"
+                    onClick={onOpenCalendarModal}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-space-800 hover:bg-space-700 text-astro-cyan text-xs font-semibold border border-white/10 transition-colors shadow-sm"
+                  >
+                    <Maximize2 className="w-4 h-4" />
+                    <span>Kalender-Vorschau öffnen</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleResetAllSelections}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-space-800 hover:bg-rose-500/15 text-slate-400 hover:text-rose-300 text-xs font-medium border border-white/10 hover:border-rose-500/30 transition-colors"
+                  title="Alle manuellen Festlegungen zurücksetzen"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Alle Festlegungen löschen</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Metrics Pills */}
+            <div className="flex flex-wrap items-center gap-3 pt-4">
+              <span className="px-3 py-1 rounded-lg bg-space-850 border border-white/10 text-xs font-mono text-slate-300">
+                Motive gesamt: <strong className="text-white">13</strong> (1 Deckblatt + 12 Monate)
+              </span>
+              <span className="px-3 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-xs font-mono text-emerald-300">
+                Fest vom Admin bestimmt: <strong>{Object.keys(calendarSelections).length}</strong>
+              </span>
+              <span className="px-3 py-1 rounded-lg bg-astro-cyan/10 border border-astro-cyan/30 text-xs font-mono text-astro-cyan">
+                Automatisch via Community-Favorit: <strong>{13 - Object.keys(calendarSelections).length}</strong>
+              </span>
+              {calendarDuplicateReport.hasDuplicates ? (
+                <span className="px-3 py-1 rounded-lg bg-rose-500/20 border border-rose-500/40 text-xs font-mono text-rose-300 font-bold flex items-center gap-1.5 animate-pulse">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  <span>{calendarDuplicateReport.duplicateSlots.length} Monate mit Doppelbelegung!</span>
+                </span>
+              ) : (
+                <span className="px-3 py-1 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-xs font-mono text-emerald-300 font-bold flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Alle 13 Motive eindeutig – Keine Duplikate</span>
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Conflict Resolution Banner */}
+          {calendarDuplicateReport.hasDuplicates && (
+            <div className="p-4 rounded-2xl bg-rose-500/15 border-2 border-rose-500/40 text-rose-200 text-xs shadow-xl backdrop-blur-md space-y-2">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 animate-bounce" />
+                <strong className="text-white text-sm font-semibold">
+                  Achtung: Doppelbelegung im Kalender erkannt!
+                </strong>
+              </div>
+              <p className="text-rose-200 text-xs">
+                Die folgenden Fotos sind aktuell für mehr als einen Monat ausgewählt:
+              </p>
+              <ul className="list-disc list-inside space-y-1 text-rose-300 font-mono text-xs pl-2">
+                {calendarDuplicateReport.conflicts.map((conf, cIdx) => (
+                  <li key={cIdx}>
+                    Bild <strong>„{conf.photo.title}“</strong> (Foto: {conf.photo.author}) ist aktiv für:{' '}
+                    <span className="text-white font-bold">
+                      {conf.slots.map(s => s === 0 ? 'Deckblatt' : `${s}. ${MONTH_NAMES[s - 1]}`).join(' und ')}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-slate-300 text-xs pt-1">
+                👉 <strong>Lösung:</strong> Wähle unten bei einem der betroffenen Monate eines der alternativen Bilder aus der Kandidatenliste aus und klicke auf <em>„Als Monatsbild festlegen“</em>.
+              </p>
+            </div>
+          )}
+
+          {/* 1. DECKBLATT (HERO CARD) */}
+          <div className="bg-space-900/80 border border-white/10 rounded-2xl p-6">
+            <div className="flex items-center justify-between pb-4 mb-4 border-b border-white/10">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-amber-400/10 border border-amber-400/30 text-amber-400">
+                  <BookOpen className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-display font-bold text-base text-white">Kalender-Deckblatt (Titelbild)</h3>
+                  <p className="text-xs text-slate-400">Das Titelmotiv des Jahreskalenders 2027</p>
+                </div>
+              </div>
+              {slotWinnerMap[0]?.isManual ? (
+                <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-mono font-bold flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5" /> Festgelegt vom Admin
+                </span>
+              ) : slotWinnerMap[0]?.photo ? (
+                <span className="px-2.5 py-1 rounded-full bg-astro-cyan/15 border border-astro-cyan/30 text-astro-cyan text-xs font-mono">
+                  👥 Community-Favorit
+                </span>
+              ) : (
+                <span className="px-2.5 py-1 rounded-full bg-space-800 text-slate-400 text-xs font-mono">
+                  Noch unbesetzt
+                </span>
+              )}
+            </div>
+
+            {slotWinnerMap[0]?.photo ? (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                <div className="lg:col-span-5 relative aspect-[1.4142/1] rounded-xl overflow-hidden bg-space-950 border border-white/10 flex items-center justify-center">
+                  <img
+                    src={slotWinnerMap[0].photo.image_url}
+                    alt={slotWinnerMap[0].photo.title}
+                    className="w-full h-full object-contain"
+                  />
+                  {calendarDuplicateReport.duplicateSlots.includes(0) && (
+                    <div className="absolute top-2 right-2 px-2 py-1 rounded bg-rose-500/90 text-white font-mono text-[10px] font-bold shadow-md animate-pulse">
+                      ⚠️ Duplikat
+                    </div>
+                  )}
+                </div>
+
+                <div className="lg:col-span-7 space-y-4">
+                  <div>
+                    <h4 className="font-display font-bold text-lg text-white">{slotWinnerMap[0].photo.title}</h4>
+                    <p className="text-xs text-slate-400">Fotograf: <strong className="text-slate-200">{slotWinnerMap[0].photo.author}</strong></p>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      <span className="px-2 py-0.5 rounded bg-amber-400/10 border border-amber-400/30 text-amber-300 text-xs font-mono">
+                        {summaries[slotWinnerMap[0].photo.id]?.monthCounts?.[0] || 0} Stimmen als Deckblatt
+                      </span>
+                      <span className="px-2 py-0.5 rounded bg-space-800 text-slate-400 text-xs font-mono">
+                        {summaries[slotWinnerMap[0].photo.id]?.upvotes || 0} Upvotes insgesamt
+                      </span>
+                    </div>
+                  </div>
+
+                  {calendarDuplicateReport.duplicateSlots.includes(0) && (
+                    <div className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-200 text-xs flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                      <span>Dieses Bild ist auch für andere Kalendermonate ausgewählt! Lege unten ein alternatives Bild fest.</span>
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap items-center gap-3">
+                    {slotWinnerMap[0].isManual ? (
+                      <button
+                        type="button"
+                        onClick={() => handleSelectSlotPhoto(0, null)}
+                        className="px-4 py-2 rounded-xl bg-space-800 hover:bg-space-700 text-slate-300 hover:text-rose-300 text-xs font-mono border border-white/10 transition-colors"
+                      >
+                        Freigeben (wieder automatischen Community-Favoriten nutzen)
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleSelectSlotPhoto(0, slotWinnerMap[0].photo!.id)}
+                        className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 text-space-950 font-bold text-xs font-mono hover:from-amber-300 hover:to-amber-400 transition-all flex items-center gap-1.5 shadow-sm"
+                      >
+                        <Pin className="w-3.5 h-3.5" />
+                        <span>Dieses Bild als Deckblatt festlegen</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Alternative Candidates for Cover */}
+                  {slotWinnerMap[0].candidates.filter(c => c.photo.id !== slotWinnerMap[0].photo?.id).length > 0 && (
+                    <div className="pt-3 border-t border-white/10">
+                      <span className="text-xs font-mono text-slate-400 block mb-2">Alternative Deckblatt-Kandidaten:</span>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {slotWinnerMap[0].candidates
+                          .filter(c => c.photo.id !== slotWinnerMap[0].photo?.id)
+                          .map(({ photo: cPhoto, count }) => (
+                            <div key={cPhoto.id} className="flex items-center justify-between gap-2 p-2 rounded-xl bg-space-850 border border-white/5">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <img src={cPhoto.image_url} alt={cPhoto.title} className="w-10 h-8 object-cover rounded bg-space-900 shrink-0" />
+                                <div className="truncate text-xs">
+                                  <div className="font-medium text-white truncate">{cPhoto.title}</div>
+                                  <div className="text-[10px] text-slate-400">{count} Stimmen</div>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleSelectSlotPhoto(0, cPhoto.id)}
+                                className="px-2.5 py-1 rounded-lg bg-space-800 hover:bg-amber-400 hover:text-space-950 text-amber-300 text-[11px] font-mono transition-colors shrink-0"
+                              >
+                                Festlegen
+                              </button>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Manual Dropdown Selector */}
+                  <div className="pt-2">
+                    <select
+                      onChange={(e) => {
+                        if (e.target.value) handleSelectSlotPhoto(0, e.target.value);
+                      }}
+                      defaultValue=""
+                      className="text-xs font-mono bg-space-850 border border-white/10 rounded-xl px-3 py-2 text-slate-300 w-full max-w-sm focus:outline-none focus:border-amber-400"
+                    >
+                      <option value="" disabled>Anderes Bild aus Galerie als Deckblatt wählen...</option>
+                      {photos.map(p => (
+                        <option key={p.id} value={p.id}>{p.title} ({p.author})</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="p-8 text-center text-slate-400">
+                <ImageOff className="w-8 h-8 text-slate-600 mx-auto mb-2" />
+                <p className="text-sm">Noch kein Deckblatt ausgewählt.</p>
+                <div className="mt-4 max-w-xs mx-auto">
+                  <select
+                    onChange={(e) => {
+                      if (e.target.value) handleSelectSlotPhoto(0, e.target.value);
+                    }}
+                    defaultValue=""
+                    className="text-xs font-mono bg-space-850 border border-white/10 rounded-xl px-3 py-2 text-slate-300 w-full focus:outline-none focus:border-amber-400"
+                  >
+                    <option value="" disabled>Bild als Deckblatt zuweisen...</option>
+                    {photos.map(p => (
+                      <option key={p.id} value={p.id}>{p.title} ({p.author})</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 2. DIE 12 MONATE (JANUAR - DEZEMBER) */}
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-display font-bold text-lg text-white flex items-center gap-2">
+                <Calendar className="w-5 h-5 text-astro-cyan" />
+                <span>Die 12 Kalendermonate (Januar – Dezember)</span>
+              </h3>
+              <span className="text-xs font-mono text-slate-400">
+                Klicke bei einem Monat auf „Festlegen“, um den Favoriten zu fixieren oder Duplikate aufzulösen
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {MONTH_NAMES.map((mName, idx) => {
+                const monthNum = idx + 1;
+                const data = slotWinnerMap[monthNum];
+                const isDuplicate = calendarDuplicateReport.duplicateSlots.includes(monthNum);
+                const otherCandidates = data?.candidates?.filter(c => c.photo.id !== data.photo?.id) || [];
+
+                return (
+                  <div
+                    key={monthNum}
+                    className={`rounded-2xl border transition-all flex flex-col justify-between overflow-hidden ${
+                      isDuplicate
+                        ? 'border-2 border-rose-500 bg-rose-950/20 shadow-lg shadow-rose-950/40 ring-1 ring-rose-500/50'
+                        : data?.isManual
+                        ? 'border-emerald-500/40 bg-space-900/95 shadow-md'
+                        : data?.photo
+                        ? 'border-white/10 bg-space-900/70 hover:border-astro-cyan/30'
+                        : 'border-dashed border-white/10 bg-space-950/40'
+                    }`}
+                  >
+                    {/* Month Card Header */}
+                    <div className={`p-3.5 border-b flex items-center justify-between text-xs font-mono ${
+                      isDuplicate
+                        ? 'bg-rose-500/20 border-rose-500/40 text-rose-300 font-bold'
+                        : data?.isManual
+                        ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300 font-bold'
+                        : 'bg-space-850/80 border-white/5 text-slate-300'
+                    }`}>
+                      <span className="flex items-center gap-1.5 font-bold">
+                        {isDuplicate && <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />}
+                        <span>{monthNum}. {mName}</span>
+                      </span>
+                      {data?.isManual ? (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/25 border border-emerald-500/50 text-emerald-300 flex items-center gap-1">
+                          <Check className="w-2.5 h-2.5" /> Fest
+                        </span>
+                      ) : data?.photo ? (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-astro-cyan/15 text-astro-cyan border border-astro-cyan/30">
+                          Community
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-slate-500">Unbesetzt</span>
+                      )}
+                    </div>
+
+                    {/* Month Active Photo */}
+                    <div className="p-3.5 space-y-3 flex-1 flex flex-col justify-between">
+                      {data?.photo ? (
+                        <div>
+                          <div className="relative aspect-[1.4142/1] rounded-xl overflow-hidden bg-space-950 border border-white/10 flex items-center justify-center">
+                            <img
+                              src={data.photo.image_url}
+                              alt={data.photo.title}
+                              className="w-full h-full object-contain"
+                            />
+                            {isDuplicate && (
+                              <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded bg-rose-500 text-white font-mono text-[9px] font-bold shadow-md animate-pulse">
+                                ⚠️ Doppelbelegung
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="mt-2.5">
+                            <div className="font-semibold text-xs text-white truncate" title={data.photo.title}>
+                              {data.photo.title}
+                            </div>
+                            <div className="text-[11px] text-slate-400 truncate">
+                              Foto: {data.photo.author}
+                            </div>
+                            <div className="flex items-center justify-between text-[10px] font-mono mt-1 text-slate-400">
+                              <span className="text-astro-cyan font-bold">
+                                {summaries[data.photo.id]?.monthCounts?.[monthNum] || 0} Stimmen für {getMonthShortLabel(monthNum)}
+                              </span>
+                              <span>
+                                {summaries[data.photo.id]?.upvotes || 0} Upvotes
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Quick Pin / Release Action */}
+                          <div className="mt-2.5">
+                            {data.isManual ? (
+                              <button
+                                type="button"
+                                onClick={() => handleSelectSlotPhoto(monthNum, null)}
+                                className="w-full py-1.5 rounded-lg bg-space-850 hover:bg-space-800 text-slate-400 hover:text-rose-300 border border-white/10 text-xs font-mono transition-colors"
+                              >
+                                Freigeben (Community nutzen)
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleSelectSlotPhoto(monthNum, data.photo!.id)}
+                                className="w-full py-1.5 rounded-lg bg-astro-cyan hover:bg-cyan-300 text-space-950 font-bold text-xs font-mono transition-colors flex items-center justify-center gap-1.5 shadow-sm"
+                              >
+                                <Pin className="w-3 h-3" />
+                                <span>Als {getMonthShortLabel(monthNum)} festlegen</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="aspect-[1.4142/1] rounded-xl border border-dashed border-white/10 flex flex-col items-center justify-center p-3 text-center text-slate-500 text-xs">
+                          <ImageOff className="w-6 h-6 mb-1 text-slate-600" />
+                          <span>Noch kein Bild zugewiesen</span>
+                        </div>
+                      )}
+
+                      {/* Alternatives / Candidates with votes */}
+                      <div className="pt-2 border-t border-white/10 space-y-2">
+                        {otherCandidates.length > 0 && (
+                          <div>
+                            <span className="text-[10px] font-mono text-slate-400 block mb-1.5">
+                              Andere Vorschläge für {mName}:
+                            </span>
+                            <div className="space-y-1.5 max-h-36 overflow-y-auto pr-0.5">
+                              {otherCandidates.map(({ photo: cPhoto, count }) => (
+                                <div key={cPhoto.id} className="flex items-center justify-between gap-1.5 p-1.5 rounded-lg bg-space-850 border border-white/5 text-[11px]">
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    <img src={cPhoto.image_url} alt={cPhoto.title} className="w-8 h-6 object-cover rounded bg-space-900 shrink-0" />
+                                    <div className="truncate">
+                                      <div className="font-medium text-white truncate text-[11px]">{cPhoto.title}</div>
+                                      <div className="text-[9px] text-slate-400">{count} Stimmen</div>
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSelectSlotPhoto(monthNum, cPhoto.id)}
+                                    className="px-2 py-0.5 rounded bg-space-800 hover:bg-astro-cyan hover:text-space-950 text-astro-cyan text-[10px] font-mono transition-colors shrink-0"
+                                    title={`Foto "${cPhoto.title}" als verbindliches Bild für ${mName} festlegen`}
+                                  >
+                                    Festlegen
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Manual photo select dropdown */}
+                        <div>
+                          <select
+                            onChange={(e) => {
+                              if (e.target.value) handleSelectSlotPhoto(monthNum, e.target.value);
+                            }}
+                            defaultValue=""
+                            className="w-full text-[10px] font-mono bg-space-850 border border-white/10 rounded-lg px-2 py-1 text-slate-300 focus:outline-none focus:border-astro-cyan truncate"
+                          >
+                            <option value="" disabled>Aus allen Fotos wählen...</option>
+                            {photos.map(p => (
+                              <option key={p.id} value={p.id}>{p.title} ({p.author})</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                    </div>
                   </div>
                 );
               })}

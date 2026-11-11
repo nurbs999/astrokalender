@@ -249,3 +249,32 @@ BEGIN
     RETURN true;
 END;
 $$;
+
+-- ------------------------------------------------------------------------------
+-- 6. Kalender-Kuration (Feste Monats- & Deckblatt-Auswahl durch Admin)
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.calendar_selections (
+    slot INTEGER PRIMARY KEY CHECK (slot >= 0 AND slot <= 12),
+    photo_id UUID NOT NULL REFERENCES public.photos(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- RLS aktivieren
+ALTER TABLE public.calendar_selections ENABLE ROW LEVEL SECURITY;
+
+-- Jeder darf die festgelegte Kalenderauswahl einsehen
+DROP POLICY IF EXISTS "Kalender-Auswahl öffentlich lesbar" ON public.calendar_selections;
+CREATE POLICY "Kalender-Auswahl öffentlich lesbar"
+    ON public.calendar_selections FOR SELECT
+    TO anon, authenticated
+    USING (true);
+
+-- Festlegungen speichern / ändern / löschen
+DROP POLICY IF EXISTS "Kalender-Auswahl verwalten" ON public.calendar_selections;
+CREATE POLICY "Kalender-Auswahl verwalten"
+    ON public.calendar_selections FOR ALL
+    TO anon, authenticated
+    USING (true)
+    WITH CHECK (true);
+
