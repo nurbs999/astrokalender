@@ -9,6 +9,7 @@ interface CalendarPreviewModalProps {
   summaries: Record<string, PhotoVoteSummary>;
   calendarSelections?: Record<number, string>;
   isAdmin?: boolean;
+  isVotingClosed?: boolean;
   onSaveSelection?: (slot: number, photoId: string | null) => Promise<void>;
   onClose: () => void;
   onOpenLightbox: (photo: Photo) => void;
@@ -21,6 +22,7 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
   summaries,
   calendarSelections = {},
   isAdmin = false,
+  isVotingClosed = false,
   onSaveSelection,
   onClose,
   onOpenLightbox,
@@ -28,16 +30,24 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
   const [viewMode, setViewMode] = useState<'personal' | 'community'>('personal');
   // If multiple photos are assigned to the same slot (0..12), track which index is shown
   const [activeSlotIndex, setActiveSlotIndex] = useState<Record<number, number>>({});
+  // In closed voting mode, admin can optionally toggle to see all alternatives
+  const [showAdminAlternatives, setShowAdminAlternatives] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
 
-    // Falls der Nutzer noch keine eigenen Monatsauswahlen getroffen hat, direkt Community-Favoriten anzeigen
-    const hasPersonalVotes = Object.values(userVotes).some(
-      (v) => v.suggested_month !== null && v.suggested_month !== undefined
-    );
-    if (!hasPersonalVotes) {
+    setShowAdminAlternatives(false);
+
+    if (isVotingClosed) {
       setViewMode('community');
+    } else {
+      // Falls der Nutzer noch keine eigenen Monatsauswahlen getroffen hat, direkt Community-Favoriten anzeigen
+      const hasPersonalVotes = Object.values(userVotes).some(
+        (v) => v.suggested_month !== null && v.suggested_month !== undefined
+      );
+      if (!hasPersonalVotes) {
+        setViewMode('community');
+      }
     }
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -45,7 +55,7 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose, userVotes]);
+  }, [isOpen, onClose, userVotes, isVotingClosed]);
 
   // Map slots 0..12 -> Photo[] for personal selection vs community top picks
   const slotPhotosMap = useMemo(() => {
@@ -67,6 +77,30 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
       if (upB !== upA) return upB - upA;
       return pA.title.localeCompare(pB.title);
     };
+
+    // Wenn Voting beendet ist und Admin-Alternativenmodus nicht aktiv ist:
+    // Zeige NUR die finale Auswahl (vom Admin festgelegte Bilder bzw. Top-Kandidat) – KEINE Alternativen!
+    if (isVotingClosed && (!isAdmin || !showAdminAlternatives)) {
+      for (let m = 0; m <= 12; m++) {
+        // 1. Manuell festgelegtes Bild vom Admin
+        const fixedPhotoId = calendarSelections[m];
+        if (fixedPhotoId) {
+          const fixedPhoto = photos.find((p) => p.id === fixedPhotoId);
+          if (fixedPhoto) {
+            map[m] = [fixedPhoto];
+            continue;
+          }
+        }
+
+        // 2. Fallback: Top-Kandidat der Abstimmung (exakt 1 Bild)
+        const candidates = photos
+          .filter((p) => (summaries[p.id]?.monthCounts?.[m] || 0) > 0)
+          .sort((a, b) => comparePhotosForSlot(a, b, m));
+
+        map[m] = candidates[0] ? [candidates[0]] : [];
+      }
+      return map;
+    }
 
     if (viewMode === 'personal') {
       Object.values(userVotes).forEach((vote) => {
@@ -105,7 +139,7 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
     }
 
     return map;
-  }, [viewMode, userVotes, photos, summaries, calendarSelections]);
+  }, [viewMode, userVotes, photos, summaries, calendarSelections, isVotingClosed, isAdmin, showAdminAlternatives]);
 
   const coverPhotos = slotPhotosMap[0] || [];
   const activeCoverIdx = Math.min(activeSlotIndex[0] || 0, Math.max(0, coverPhotos.length - 1));
@@ -197,8 +231,16 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
             </div>
             <div>
               <h2 className="font-display font-bold text-base sm:text-lg text-white flex flex-wrap items-center gap-2">
-                <span>Astro-Kalender 2027 – Vorschau</span>
-                <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-astro-cyan/15 text-astro-cyan border border-astro-cyan/30">
+                <span>
+                  {isVotingClosed && (!isAdmin || !showAdminAlternatives)
+                    ? 'Astro-Kalender 2027 – Finale Auswahl'
+                    : 'Astro-Kalender 2027 – Vorschau'}
+                </span>
+                <span className={`text-xs font-mono px-2 py-0.5 rounded-full border ${
+                  isVotingClosed && (!isAdmin || !showAdminAlternatives)
+                    ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                    : 'bg-astro-cyan/15 text-astro-cyan border-astro-cyan/30'
+                }`}>
                   {coverPhotos.length > 0 ? 'Deckblatt ✓' : 'Kein Deckblatt'} • {filledMonthsCount}/12 Monate
                 </span>
                 {duplicateSlots.length > 0 && (
@@ -215,43 +257,71 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
                 )}
               </h2>
               <p className="text-xs text-slate-400 hidden sm:block">
-                Übersicht des Kalenderdeckblatts und aller 12 Monatsblätter im 3×4-Raster (DIN A3)
+                {isVotingClosed && (!isAdmin || !showAdminAlternatives)
+                  ? 'Offiziell festgelegte Motive für das Kalenderdeckblatt und alle 12 Kalendermonate'
+                  : 'Übersicht des Kalenderdeckblatts und aller 12 Monatsblätter im 3×4-Raster (DIN A3)'}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            {/* View Mode Switcher: Personal vs Community */}
-            <div className="flex items-center p-1 rounded-xl bg-space-900 border border-white/10 text-xs font-mono">
-              <button
-                type="button"
-                onClick={() => {
-                  setViewMode('personal');
-                  setActiveSlotIndex({});
-                }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${viewMode === 'personal'
-                    ? 'bg-astro-cyan text-space-950 font-bold shadow-sm'
-                    : 'text-slate-400 hover:text-white'
-                  }`}
-              >
-                <User className="w-3.5 h-3.5" />
-                <span>Meine Auswahl</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setViewMode('community');
-                  setActiveSlotIndex({});
-                }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${viewMode === 'community'
-                    ? 'bg-astro-cyan text-space-950 font-bold shadow-sm'
-                    : 'text-slate-400 hover:text-white'
-                  }`}
-              >
-                <Users className="w-3.5 h-3.5" />
-                <span>Community-Favoriten</span>
-              </button>
-            </div>
+            {/* View Mode Switcher: Personal vs Community vs Closed */}
+            {isVotingClosed ? (
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-mono font-semibold">
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Finale Auswahl</span>
+                </div>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAdminAlternatives(!showAdminAlternatives);
+                      setActiveSlotIndex({});
+                    }}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-mono border transition-all ${
+                      showAdminAlternatives
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 font-semibold shadow-sm'
+                        : 'bg-space-850 hover:bg-space-800 text-slate-300 hover:text-white border-white/10'
+                    }`}
+                    title="Als Admin zwischen der finalen Auswahl und allen Alternativen umschalten"
+                  >
+                    <span>{showAdminAlternatives ? 'Alternativen ausblenden' : 'Alternativen anzeigen (Admin)'}</span>
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center p-1 rounded-xl bg-space-900 border border-white/10 text-xs font-mono">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setViewMode('personal');
+                    setActiveSlotIndex({});
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${viewMode === 'personal'
+                      ? 'bg-astro-cyan text-space-950 font-bold shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                    }`}
+                >
+                  <User className="w-3.5 h-3.5" />
+                  <span>Meine Auswahl</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setViewMode('community');
+                    setActiveSlotIndex({});
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${viewMode === 'community'
+                      ? 'bg-astro-cyan text-space-950 font-bold shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                    }`}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>Community-Favoriten</span>
+                </button>
+              </div>
+            )}
 
             <button
               type="button"
@@ -277,7 +347,8 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
                   <strong className="text-white block font-semibold text-sm">Achtung: Doppelbelegung im Kalender erkannt!</strong>
                   <span>
                     Ein oder mehrere Bilder sind für mehr als einen Monat bzw. das Deckblatt ausgewählt (rot umrandet).
-                    {viewMode === 'community' && ' Nutze bei den rot umrandeten Monaten die Pfeile ‹ ›, um alternative Motive auszuwählen.'}
+                    {!isVotingClosed && viewMode === 'community' && ' Nutze bei den rot umrandeten Monaten die Pfeile ‹ ›, um alternative Motive auszuwählen.'}
+                    {isVotingClosed && isAdmin && ' Bitte passe im Admin-Dashboard die Auswahl an, sodass jedes Bild nur einmal vorkommt.'}
                   </span>
                 </div>
               </div>
@@ -364,10 +435,16 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
                           <span className="text-xs font-mono font-bold text-amber-300 block">
                             {currentCoverVotes} {currentCoverVotes === 1 ? 'Stimme' : 'Stimmen'}
                           </span>
-                          {coverPhotos.length > 1 && activeCoverIdx === 0 && (
-                            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 border border-amber-400/30">
-                              Top 1
+                          {calendarSelections[0] === currentCoverPhoto.id ? (
+                            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold">
+                              Festgelegt
                             </span>
+                          ) : (
+                            coverPhotos.length > 1 && activeCoverIdx === 0 && (
+                              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                                Top 1
+                              </span>
+                            )
                           )}
                         </div>
                         <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
@@ -556,10 +633,16 @@ export const CalendarPreviewModal: React.FC<CalendarPreviewModalProps> = ({
                                 <span className="text-[10px] font-mono font-semibold text-astro-cyan block">
                                   {activeMonthVotes} {activeMonthVotes === 1 ? 'Stimme' : 'Stimmen'}
                                 </span>
-                                {assignedPhotos.length > 1 && activeIdx === 0 && (
-                                  <span className="inline-block text-[9px] font-mono px-1 py-0.2 rounded bg-astro-cyan/20 text-astro-cyan font-bold">
-                                    Top 1
+                                {calendarSelections[monthNum] === activePhoto.id ? (
+                                  <span className="inline-block text-[9px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold">
+                                    Festgelegt
                                   </span>
+                                ) : (
+                                  assignedPhotos.length > 1 && activeIdx === 0 && (
+                                    <span className="inline-block text-[9px] font-mono px-1 py-0.2 rounded bg-astro-cyan/20 text-astro-cyan font-bold">
+                                      Top 1
+                                    </span>
+                                  )
                                 )}
                               </div>
                             </div>

@@ -790,6 +790,7 @@ export function App() {
         summaries={summaries}
         calendarSelections={calendarSelections}
         isAdmin={sessionStorage.getItem('astrovote_admin_auth') === 'true'}
+        isVotingClosed={isVotingClosed}
         onSaveSelection={handleSaveCalendarSelection}
         onClose={() => setIsCalendarModalOpen(false)}
         onOpenLightbox={(p) => setActiveLightboxPhoto(p)}
