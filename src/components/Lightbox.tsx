@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { X, ChevronLeft, ChevronRight, ThumbsUp, Calendar, Camera, Clock, User } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, ThumbsUp, Calendar, Camera, Clock, User, Lock } from 'lucide-react';
 import { Photo, Vote, Rating, PhotoVoteSummary, MONTH_NAMES, getMonthLabel } from '../types';
 
 interface LightboxProps {
@@ -7,6 +7,7 @@ interface LightboxProps {
   photos: Photo[];
   userVote?: Vote;
   summary?: PhotoVoteSummary;
+  isVotingClosed?: boolean;
   onClose: () => void;
   onNavigate: (direction: 'prev' | 'next') => void;
   onVote: (photoId: string, rating: Rating, month: number | null) => void;
@@ -17,6 +18,7 @@ export const Lightbox: React.FC<LightboxProps> = ({
   photos,
   userVote,
   summary,
+  isVotingClosed = false,
   onClose,
   onNavigate,
   onVote,
@@ -38,11 +40,13 @@ export const Lightbox: React.FC<LightboxProps> = ({
   }, [onClose, onNavigate]);
 
   const handleRating = (rating: Rating) => {
+    if (isVotingClosed) return;
     const finalRating = currentRating === rating ? 'none' : rating;
     onVote(photo.id, finalRating, currentMonth);
   };
 
   const handleMonth = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    if (isVotingClosed) return;
     const val = e.target.value === '' ? null : parseInt(e.target.value, 10);
     const finalRating = currentRating === 'none' ? 'up' : currentRating;
     onVote(photo.id, finalRating, val);
@@ -139,14 +143,33 @@ export const Lightbox: React.FC<LightboxProps> = ({
             <div className="flex items-center gap-2">
               <button
                 type="button"
+                disabled={isVotingClosed}
                 onClick={() => handleRating('up')}
-                className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs sm:text-sm font-medium border transition-all ${currentRating === 'up'
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs sm:text-sm font-medium border transition-all ${
+                  isVotingClosed
+                    ? currentRating === 'up'
+                      ? 'bg-space-800 text-emerald-300 border-emerald-500/30 cursor-not-allowed opacity-90'
+                      : 'bg-space-900/60 text-slate-500 border-white/5 cursor-not-allowed opacity-60'
+                    : currentRating === 'up'
                     ? 'bg-gradient-to-r from-emerald-400 to-astro-lime text-space-950 border-emerald-300 font-bold shadow-glow-lime'
                     : 'bg-space-850 hover:bg-space-800 text-slate-200 border-white/10 hover:text-emerald-400'
-                  }`}
+                }`}
+                title={isVotingClosed ? 'Abstimmung beendet (Voting gesperrt)' : undefined}
               >
-                <ThumbsUp className={`w-4 h-4 ${currentRating === 'up' ? 'fill-current' : ''}`} />
-                <span>{currentRating === 'up' ? 'Gestimmt (Gefällt mir)' : 'Gefällt mir'}</span>
+                {isVotingClosed ? (
+                  <Lock className="w-3.5 h-3.5 text-slate-400" />
+                ) : (
+                  <ThumbsUp className={`w-4 h-4 ${currentRating === 'up' ? 'fill-current' : ''}`} />
+                )}
+                <span>
+                  {isVotingClosed
+                    ? currentRating === 'up'
+                      ? 'Gestimmt (Voting beendet)'
+                      : 'Voting beendet'
+                    : currentRating === 'up'
+                    ? 'Gestimmt (Gefällt mir)'
+                    : 'Gefällt mir'}
+                </span>
               </button>
             </div>
 
@@ -156,7 +179,13 @@ export const Lightbox: React.FC<LightboxProps> = ({
               <select
                 value={currentMonth !== null ? currentMonth : ''}
                 onChange={handleMonth}
-                className="bg-space-850 hover:bg-space-800 border border-white/10 rounded-xl py-2 px-3 text-xs text-slate-200 focus:outline-none focus:border-astro-cyan transition-colors cursor-pointer"
+                disabled={isVotingClosed}
+                title={isVotingClosed ? 'Abstimmung beendet' : undefined}
+                className={`rounded-xl py-2 px-3 text-xs focus:outline-none transition-colors ${
+                  isVotingClosed
+                    ? 'bg-space-900/80 border border-white/5 text-slate-400 cursor-not-allowed'
+                    : 'bg-space-850 hover:bg-space-800 border border-white/10 text-slate-200 focus:border-astro-cyan cursor-pointer'
+                }`}
               >
                 <option value="">Monat: Keine Präferenz</option>
                 <option value={0}>📖 Deckblatt (Titelbild)</option>

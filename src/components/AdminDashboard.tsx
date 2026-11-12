@@ -11,7 +11,8 @@ import {
   uploadPhoto, updatePhoto, deletePhoto, fetchAllVotesSummary,
   fetchVotersList, fetchAllVotesDetailed, seedDemoPhotosToSupabase, isUsingLiveSupabase,
   uploadImageFile, deleteStorageImage, verifyAdminPasswordWithSupabase, updateAdminPasswordInSupabase,
-  fetchCalendarSelections, saveCalendarSelection, clearAllCalendarSelections
+  fetchCalendarSelections, saveCalendarSelection, clearAllCalendarSelections,
+  fetchVotingClosed, setVotingClosed
 } from '../lib/api';
 
 interface AdminDashboardProps {
@@ -21,6 +22,8 @@ interface AdminDashboardProps {
   calendarSelections?: Record<number, string>;
   onSaveCalendarSelection?: (slot: number, photoId: string | null) => Promise<void>;
   onOpenCalendarModal?: () => void;
+  isVotingClosed?: boolean;
+  onToggleVotingClosed?: (closed: boolean) => Promise<void>;
 }
 
 const LS_ADMIN_PASSWORD_KEY = 'astrovote_admin_custom_pin';
@@ -38,6 +41,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   calendarSelections: propsCalendarSelections,
   onSaveCalendarSelection,
   onOpenCalendarModal,
+  isVotingClosed: propsVotingClosed,
+  onToggleVotingClosed,
 }) => {
   // Authentication state
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -46,6 +51,42 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [passwordInput, setPasswordInput] = useState('');
   const [authError, setAuthError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  // Global Voting Status (Bilder & Monate)
+  const [isVotingClosed, setIsVotingClosed] = useState<boolean>(propsVotingClosed ?? false);
+  const [isTogglingVoting, setIsTogglingVoting] = useState(false);
+
+  useEffect(() => {
+    if (propsVotingClosed !== undefined) {
+      setIsVotingClosed(propsVotingClosed);
+    } else {
+      fetchVotingClosed().then(setIsVotingClosed).catch(console.warn);
+    }
+  }, [propsVotingClosed]);
+
+  const handleToggleVotingClosed = async () => {
+    const targetClosed = !isVotingClosed;
+    const question = targetClosed
+      ? 'Möchtest du das gesamte Voting (Bilder UND Monate) wirklich ABSCHALTEN?\n\nBesucher können danach keine Stimmen oder Monatsempfehlungen mehr abgeben oder ändern.'
+      : 'Möchtest du das Voting wieder AKTIVIEREN?\n\nBesucher können danach wieder für Bilder und Monate abstimmen.';
+
+    if (!window.confirm(question)) return;
+
+    setIsTogglingVoting(true);
+    try {
+      if (onToggleVotingClosed) {
+        await onToggleVotingClosed(targetClosed);
+      } else {
+        await setVotingClosed(targetClosed);
+      }
+      setIsVotingClosed(targetClosed);
+    } catch (err) {
+      console.error('Error toggling voting:', err);
+      alert('Fehler beim Ändern des Voting-Status.');
+    } finally {
+      setIsTogglingVoting(false);
+    }
+  };
 
   // Calendar Selections (curated photos for slot 0..12)
   const [calendarSelections, setCalendarSelections] = useState<Record<number, string>>(
@@ -731,6 +772,68 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             className="px-3.5 py-2 rounded-xl bg-space-800 hover:bg-space-700 text-rose-300 text-xs border border-rose-500/20 transition-colors"
           >
             Abmelden / Galerie
+          </button>
+        </div>
+      </div>
+
+      {/* Global Voting Switch Card (Bilder & Monate) */}
+      <div className={`my-6 p-4 sm:p-5 rounded-2xl border transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl ${
+        isVotingClosed
+          ? 'bg-gradient-to-r from-rose-950/40 via-space-900 to-space-900 border-rose-500/40'
+          : 'bg-gradient-to-r from-emerald-950/30 via-space-900 to-space-900 border-emerald-500/40'
+      }`}>
+        <div className="flex items-start sm:items-center gap-3.5">
+          <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 border ${
+            isVotingClosed
+              ? 'bg-rose-500/20 border-rose-500/40 text-rose-300'
+              : 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+          }`}>
+            {isVotingClosed ? <Lock className="w-6 h-6" /> : <Sparkles className="w-6 h-6" />}
+          </div>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="font-semibold text-white text-base">
+                Abstimmung (Bilder & Monate):
+              </h2>
+              <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold font-mono border ${
+                isVotingClosed
+                  ? 'bg-rose-500/25 border-rose-500/50 text-rose-200'
+                  : 'bg-emerald-500/25 border-emerald-500/50 text-emerald-200'
+              }`}>
+                {isVotingClosed ? '🔴 ABGESCHALTET (Voting beendet)' : '🟢 AKTIV (Voting geöffnet)'}
+              </span>
+            </div>
+            <p className="text-xs text-slate-300 mt-1 max-w-2xl leading-relaxed">
+              {isVotingClosed
+                ? 'Das Voting ist offiziell beendet. Besucher können keine Stimmen (Upvotes) und keine Kalendermonate/Deckblätter mehr abgeben oder ändern. Alle Ergebnisse bleiben sichtbar.'
+                : 'Das Voting ist geöffnet. Besucher können Fotos bewerten (Gefällt mir) und Monatsempfehlungen für den Kalender abgeben.'}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 shrink-0 w-full sm:w-auto justify-end">
+          <button
+            onClick={handleToggleVotingClosed}
+            disabled={isTogglingVoting}
+            className={`w-full sm:w-auto px-4 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 border shadow-lg cursor-pointer ${
+              isVotingClosed
+                ? 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400/50 hover:shadow-glow-emerald'
+                : 'bg-rose-600 hover:bg-rose-500 text-white border-rose-400/50 hover:shadow-glow-rose'
+            }`}
+          >
+            {isTogglingVoting ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : isVotingClosed ? (
+              <>
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Abstimmung wieder öffnen</span>
+              </>
+            ) : (
+              <>
+                <Lock className="w-4 h-4" />
+                <span>Abstimmung abschalten (Voting beenden)</span>
+              </>
+            )}
           </button>
         </div>
       </div>

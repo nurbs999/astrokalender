@@ -7,6 +7,7 @@ const LS_PHOTOS_KEY = 'astrovote_photos_v1';
 const LS_VOTES_KEY = 'astrovote_votes_v1';
 const LS_VOTERS_KEY = 'astrovote_voters_v1';
 const LS_SUPABASE_CONFIG_KEY = 'astrovote_supabase_config_v1';
+const LS_VOTING_CLOSED_KEY = 'astrovote_voting_closed_v1';
 
 // Read config from environment variables if set at build time, else from localStorage
 export function getStoredSupabaseConfig(): { url: string; anonKey: string } {
@@ -559,6 +560,11 @@ export async function saveVote(params: {
   rating: Rating;
   suggested_month: number | null;
 }): Promise<Vote> {
+  const isClosed = await fetchVotingClosed();
+  if (isClosed) {
+    throw new Error('Die Abstimmung ist bereits beendet. Neue Stimmen oder Änderungen können nicht mehr gespeichert werden.');
+  }
+
   const email = params.voter_email.toLowerCase().trim();
   const name = params.voter_name.trim();
   const client = getSupabaseClient();
@@ -961,6 +967,93 @@ export async function clearAllCalendarSelections(): Promise<boolean> {
   }
   return true;
 }
+
+// ==========================================
+// VOTING STATUS TOGGLE (OPEN / CLOSED)
+// ==========================================
+
+export async function fetchVotingClosed(): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      // 1. Try secure RPC
+      const { data, error } = await client.rpc('is_voting_closed');
+      if (!error && typeof data === 'boolean') {
+        try {
+          localStorage.setItem(LS_VOTING_CLOSED_KEY, data ? 'true' : 'false');
+        } catch {}
+        return data;
+      }
+    } catch {
+      // ignore and try fallback
+    }
+
+    try {
+      // 2. Direct select from admin_config for 'voting_closed'
+      const { data, error } = await client
+        .from('admin_config')
+        .select('value')
+        .eq('key', 'voting_closed')
+        .maybeSingle();
+
+      if (!error && data && data.value) {
+        const isClosed = data.value === 'true';
+        try {
+          localStorage.setItem(LS_VOTING_CLOSED_KEY, isClosed ? 'true' : 'false');
+        } catch {}
+        return isClosed;
+      }
+    } catch {
+      // ignore and fallback to localStorage
+    }
+  }
+
+  try {
+    return localStorage.getItem(LS_VOTING_CLOSED_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export async function setVotingClosed(closed: boolean): Promise<boolean> {
+  // Update localStorage immediately
+  try {
+    localStorage.setItem(LS_VOTING_CLOSED_KEY, closed ? 'true' : 'false');
+  } catch {}
+
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      // 1. Try secure RPC
+      const { data, error } = await client.rpc('set_voting_closed', { closed });
+      if (!error && data) {
+        return true;
+      }
+    } catch {
+      // ignore and try direct upsert
+    }
+
+    try {
+      // 2. Direct upsert into admin_config
+      const { error } = await client.from('admin_config').upsert({
+        key: 'voting_closed',
+        value: closed ? 'true' : 'false',
+        updated_at: new Date().toISOString()
+      });
+      if (error) {
+        console.warn('Error saving voting_closed in Supabase admin_config:', error.message);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.warn('Error saving voting_closed in Supabase:', err);
+      return false;
+    }
+  }
+
+  return true;
+}
+
 
 
 

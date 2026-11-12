@@ -2,13 +2,14 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import confetti from 'canvas-confetti';
 import {
   Sparkles, Filter, CheckCircle2, Circle, ArrowUpDown,
-  RefreshCw, CalendarDays, Rocket, AlertCircle, MailCheck
+  RefreshCw, CalendarDays, Rocket, AlertCircle, MailCheck, Lock
 } from 'lucide-react';
 import { Photo, Voter, Vote, Rating, PhotoVoteSummary, getMonthLabel } from './types';
 import {
   fetchPhotos, fetchUserVotes, saveVote, fetchAllVotesSummary,
   isUsingLiveSupabase, registerOrUpdateVoter, getSupabaseClient, fetchVoter,
-  fetchCalendarSelections, saveCalendarSelection
+  fetchCalendarSelections, saveCalendarSelection,
+  fetchVotingClosed, setVotingClosed
 } from './lib/api';
 import { Navbar } from './components/Navbar';
 import { PhotoCard } from './components/PhotoCard';
@@ -28,6 +29,13 @@ export function App() {
   const [loading, setLoading] = useState(true);
   const [summaries, setSummaries] = useState<Record<string, PhotoVoteSummary>>({});
   const [calendarSelections, setCalendarSelections] = useState<Record<number, string>>({});
+  const [isVotingClosed, setIsVotingClosed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('astrovote_voting_closed_v1') === 'true';
+    } catch {
+      return false;
+    }
+  });
 
   // Voter & Votes
   const [currentVoter, setCurrentVoter] = useState<Voter | null>(() => {
@@ -95,14 +103,16 @@ export function App() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [fetchedPhotos, summaryMap, calSelections] = await Promise.all([
+      const [fetchedPhotos, summaryMap, calSelections, votingClosed] = await Promise.all([
         fetchPhotos(),
         fetchAllVotesSummary(),
         fetchCalendarSelections(),
+        fetchVotingClosed(),
       ]);
       setPhotos(fetchedPhotos);
       setSummaries(summaryMap);
       setCalendarSelections(calSelections);
+      setIsVotingClosed(votingClosed);
     } catch (err) {
       console.error('Error loading initial data:', err);
       addToast('Fehler beim Laden der Fotos', 'error');
@@ -110,6 +120,17 @@ export function App() {
       setLoading(false);
     }
   }, []);
+
+  const handleToggleVotingClosed = async (closed: boolean) => {
+    await setVotingClosed(closed);
+    setIsVotingClosed(closed);
+    addToast(
+      closed
+        ? '🔒 Die Abstimmung für Bilder und Monate wurde offiziell beendet.'
+        : '🟢 Die Abstimmung wurde wieder geöffnet.',
+      closed ? 'info' : 'success'
+    );
+  };
 
   const handleSaveCalendarSelection = async (slot: number, photoId: string | null) => {
     await saveCalendarSelection(slot, photoId);
@@ -234,6 +255,11 @@ export function App() {
 
   // Execute a vote
   const handleVote = async (photoId: string, rating: Rating, month: number | null) => {
+    if (isVotingClosed) {
+      addToast('Die Abstimmung ist bereits beendet. Neue Stimmen oder Empfehlungen können nicht mehr abgegeben werden.', 'info');
+      return;
+    }
+
     if (!currentVoter) {
       // Prompt voter for identity first
       setPendingVote({ photoId, rating, month });
@@ -527,6 +553,7 @@ export function App() {
         selectedMonths={globalVotedMonths}
         duplicateMonths={globalDuplicateMonths}
         isSupabaseLive={isUsingLiveSupabase()}
+        isVotingClosed={isVotingClosed}
         onOpenVoterModal={() => setIsVoterModalOpen(true)}
         onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
         onOpenVerificationModal={() => setIsVerificationModalOpen(true)}
@@ -543,6 +570,8 @@ export function App() {
             calendarSelections={calendarSelections}
             onSaveCalendarSelection={handleSaveCalendarSelection}
             onOpenCalendarModal={() => setIsCalendarModalOpen(true)}
+            isVotingClosed={isVotingClosed}
+            onToggleVotingClosed={handleToggleVotingClosed}
             onExit={() => {
               window.location.hash = '';
               setIsAdminMode(false);
@@ -568,6 +597,28 @@ export function App() {
               <p className="mt-4 text-sm sm:text-base text-slate-300 leading-relaxed">
                 Stimme für jedes Foto mit <strong>Daumen hoch (👍)</strong> ab und schlage den passenden Kalendermonat vor. Deine Stimmen werden sicher gespeichert und fließen direkt in das Gesamtergebnis ein.
               </p>
+
+              {/* Voting Closed Banner */}
+              {isVotingClosed && (
+                <div className="mt-6 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-rose-950/40 via-space-900 to-amber-950/30 border border-rose-500/40 shadow-glow-rose/10 flex items-start sm:items-center gap-4 text-left">
+                  <div className="w-10 h-10 rounded-xl bg-rose-500/20 text-rose-300 border border-rose-500/30 flex items-center justify-center shrink-0">
+                    <Lock className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm sm:text-base font-bold text-white">
+                        Die Abstimmung ist offiziell beendet
+                      </h3>
+                      <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40">
+                        Voting geschlossen
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                      Vielen Dank an alle Teilnehmer! Es können keine neuen Stimmen oder Monatsvorschläge mehr abgegeben werden. Die Galerie und die Kalender-Vorschau bleiben zur Ansicht geöffnet.
+                    </p>
+                  </div>
+                </div>
+              )}
               {/* Unverified Email Warning Banner */}
               {currentVoter && !currentVoter.is_verified && (
                 <div className="mt-4 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/40 text-amber-200 backdrop-blur-md max-w-xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg shadow-amber-950/20">
@@ -692,6 +743,7 @@ export function App() {
                     userVote={userVotes[photo.id]}
                     summary={summaries[photo.id]}
                     isVoterVerified={currentVoter?.is_verified ?? false}
+                    isVotingClosed={isVotingClosed}
                     onVote={handleVote}
                     onOpenLightbox={(p) => setActiveLightboxPhoto(p)}
                     index={index}
@@ -749,6 +801,7 @@ export function App() {
         photos={photos}
         userVote={activeLightboxPhoto ? userVotes[activeLightboxPhoto.id] : undefined}
         summary={activeLightboxPhoto ? summaries[activeLightboxPhoto.id] : undefined}
+        isVotingClosed={isVotingClosed}
         onClose={() => setActiveLightboxPhoto(null)}
         onNavigate={handleLightboxNavigate}
         onVote={handleVote}

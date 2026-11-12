@@ -1,5 +1,5 @@
 import React from 'react';
-import { ThumbsUp, Calendar, Maximize2, Camera, Clock, CheckCircle } from 'lucide-react';
+import { ThumbsUp, Calendar, Maximize2, Camera, Clock, CheckCircle, Lock } from 'lucide-react';
 import { Photo, Vote, PhotoVoteSummary, Rating, MONTH_NAMES, getMonthLabel } from '../types';
 
 interface PhotoCardProps {
@@ -7,6 +7,7 @@ interface PhotoCardProps {
   userVote?: Vote;
   summary?: PhotoVoteSummary;
   isVoterVerified?: boolean;
+  isVotingClosed?: boolean;
   onVote: (photoId: string, rating: Rating, month: number | null) => void;
   onOpenLightbox: (photo: Photo) => void;
   index: number;
@@ -17,6 +18,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   userVote,
   summary,
   isVoterVerified,
+  isVotingClosed = false,
   onVote,
   onOpenLightbox,
   index
@@ -26,12 +28,14 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   const hasVoted = currentRating !== 'none' || currentMonth !== null;
 
   const handleRatingClick = (newRating: Rating) => {
+    if (isVotingClosed) return;
     // If clicking same rating, reset to 'none'
     const finalRating = currentRating === newRating ? 'none' : newRating;
     onVote(photo.id, finalRating, currentMonth);
   };
 
   const handleMonthChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    if (isVotingClosed) return;
     const val = e.target.value === '' ? null : parseInt(e.target.value, 10);
     // If user selects month but hasn't picked a rating yet, default to 'up'
     const finalRating = currentRating === 'none' ? 'up' : currentRating;
@@ -131,16 +135,43 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
           {/* UPVOTE BUTTON */}
           <button
             type="button"
+            disabled={isVotingClosed}
             onClick={() => handleRatingClick('up')}
-            className={`w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-medium text-xs sm:text-sm transition-all border ${currentRating === 'up'
-              ? 'bg-gradient-to-r from-emerald-400 to-astro-lime text-space-950 border-emerald-300 font-bold shadow-glow-lime'
-              : 'bg-space-800/80 hover:bg-space-800 text-slate-200 border-white/10 hover:border-emerald-500/40 hover:text-emerald-300'
-              }`}
+            className={`w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-medium text-xs sm:text-sm transition-all border ${
+              isVotingClosed
+                ? currentRating === 'up'
+                  ? 'bg-space-800 text-emerald-300 border-emerald-500/30 cursor-not-allowed opacity-90'
+                  : 'bg-space-900/60 text-slate-500 border-white/5 cursor-not-allowed opacity-60'
+                : currentRating === 'up'
+                ? 'bg-gradient-to-r from-emerald-400 to-astro-lime text-space-950 border-emerald-300 font-bold shadow-glow-lime'
+                : 'bg-space-800/80 hover:bg-space-800 text-slate-200 border-white/10 hover:border-emerald-500/40 hover:text-emerald-300'
+            }`}
+            title={isVotingClosed ? 'Abstimmung beendet (Voting gesperrt)' : undefined}
           >
-            <ThumbsUp className={`w-4 h-4 ${currentRating === 'up' ? 'fill-current' : ''}`} />
-            <span>{currentRating === 'up' ? 'Gefällt mir (Stimme abgegeben)' : 'Gefällt mir (Stimme abgeben)'}</span>
+            {isVotingClosed ? (
+              <Lock className="w-3.5 h-3.5 text-slate-400" />
+            ) : (
+              <ThumbsUp className={`w-4 h-4 ${currentRating === 'up' ? 'fill-current' : ''}`} />
+            )}
+            <span>
+              {isVotingClosed
+                ? currentRating === 'up'
+                  ? 'Deine Stimme (Voting beendet)'
+                  : 'Abstimmung beendet'
+                : currentRating === 'up'
+                ? 'Gefällt mir (Stimme abgegeben)'
+                : 'Gefällt mir (Stimme abgeben)'}
+            </span>
             {summary && summary.upvotes > 0 && (
-              <span className={`text-xs px-2 py-0.5 rounded-full font-mono ${currentRating === 'up' ? 'bg-space-950/20 text-space-950 font-bold' : 'bg-white/10 text-slate-300'}`}>
+              <span
+                className={`text-xs px-2 py-0.5 rounded-full font-mono ${
+                  isVotingClosed
+                    ? 'bg-white/10 text-slate-300'
+                    : currentRating === 'up'
+                    ? 'bg-space-950/20 text-space-950 font-bold'
+                    : 'bg-white/10 text-slate-300'
+                }`}
+              >
                 {summary.upvotes}
               </span>
             )}
@@ -151,12 +182,23 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
             <label className="flex items-center gap-1.5 text-[11px] font-mono text-slate-400 mb-1">
               <Calendar className="w-3.5 h-3.5 text-astro-cyan" />
               <span>Monatsempfehlung für Kalender:</span>
+              {isVotingClosed && (
+                <span className="text-[10px] text-rose-400/80 ml-auto flex items-center gap-1 font-sans">
+                  <Lock className="w-2.5 h-2.5" /> gesperrt
+                </span>
+              )}
             </label>
             <div className="relative">
               <select
                 value={currentMonth !== null ? currentMonth : ''}
                 onChange={handleMonthChange}
-                className="w-full appearance-none bg-space-850 hover:bg-space-800 border border-white/10 focus:border-astro-cyan rounded-xl py-2 pl-3 pr-8 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-astro-cyan transition-colors cursor-pointer"
+                disabled={isVotingClosed}
+                title={isVotingClosed ? 'Abstimmung beendet - Monatsempfehlungen sind gesperrt' : undefined}
+                className={`w-full appearance-none rounded-xl py-2 pl-3 pr-8 text-xs transition-colors ${
+                  isVotingClosed
+                    ? 'bg-space-900/80 border border-white/5 text-slate-400 cursor-not-allowed'
+                    : 'bg-space-850 hover:bg-space-800 border border-white/10 focus:border-astro-cyan text-slate-200 focus:outline-none focus:ring-1 focus:ring-astro-cyan cursor-pointer'
+                }`}
               >
                 <option value="">Keine Präferenz / Nicht festgelegt</option>
                 <option value={0}>📖 Deckblatt (Titelbild)</option>

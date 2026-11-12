@@ -288,3 +288,61 @@ BEGIN
     END IF;
 END $$;
 
+-- ------------------------------------------------------------------------------
+-- 7. Globaler Voting-Status (Abstimmung beenden / aktivieren)
+-- ------------------------------------------------------------------------------
+-- Sichere RPC-Funktion zum Prüfen, ob das Voting geschlossen ist (für Besucher & App)
+CREATE OR REPLACE FUNCTION public.is_voting_closed()
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    val TEXT;
+BEGIN
+    SELECT value INTO val FROM public.admin_config WHERE key = 'voting_closed';
+    RETURN COALESCE(val = 'true', false);
+END;
+$$;
+
+-- Sichere RPC-Funktion zum Setzen des Voting-Status (true = geschlossen, false = offen)
+CREATE OR REPLACE FUNCTION public.set_voting_closed(closed BOOLEAN)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+    INSERT INTO public.admin_config (key, value, updated_at)
+    VALUES ('voting_closed', CASE WHEN closed THEN 'true' ELSE 'false' END, timezone('utc'::text, now()))
+    ON CONFLICT (key) DO UPDATE
+    SET value = EXCLUDED.value, updated_at = timezone('utc'::text, now());
+    RETURN true;
+END;
+$$;
+
+-- Policies für admin_config, um den Status 'voting_closed' selektieren und aktualisieren zu können:
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE tablename = 'admin_config' AND policyname = 'Öffentlich lesbare Einstellungen'
+    ) THEN
+        CREATE POLICY "Öffentlich lesbare Einstellungen"
+            ON public.admin_config FOR SELECT
+            TO anon, authenticated
+            USING (key IN ('voting_closed'));
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE tablename = 'admin_config' AND policyname = 'Voting-Status aktualisieren'
+    ) THEN
+        CREATE POLICY "Voting-Status aktualisieren"
+            ON public.admin_config FOR ALL
+            TO anon, authenticated
+            USING (key IN ('voting_closed'))
+            WITH CHECK (key IN ('voting_closed'));
+    END IF;
+END $$;
+
+

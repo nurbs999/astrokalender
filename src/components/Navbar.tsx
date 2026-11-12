@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, User, Database, Award, AlertCircle, ArrowRight, LogOut, CalendarDays } from 'lucide-react';
+import { Sparkles, User, Database, Award, AlertCircle, ArrowRight, LogOut, CalendarDays, Lock } from 'lucide-react';
 import { Voter, MONTH_NAMES, MONTH_SHORT_NAMES } from '../types';
 
 interface NavbarProps {
@@ -9,6 +9,7 @@ interface NavbarProps {
   selectedMonths: number[];
   duplicateMonths?: number[];
   isSupabaseLive: boolean;
+  isVotingClosed?: boolean;
   onOpenVoterModal: () => void;
   onOpenSupabaseModal: () => void;
   onOpenVerificationModal: () => void;
@@ -20,6 +21,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentVoter,
   selectedMonths,
   duplicateMonths = [],
+  isVotingClosed = false,
   onOpenVoterModal,
   onOpenVerificationModal,
   onOpenCalendarModal,
@@ -135,16 +137,23 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Actions & Voter Badge */}
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
 
-            {/* Prominent Badge with Arrow pointing to login if not registered */}
-            {!currentVoter && (
-              <button
-                onClick={onOpenVoterModal}
-                className="hidden md:flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-gradient-to-r from-astro-cyan/20 via-astro-blue/20 to-astro-purple/20 border border-astro-cyan/50 text-astro-cyan hover:text-white text-xs font-semibold shadow-glow-cyan hover:scale-[1.02] transition-all cursor-pointer animate-pulse"
-                title="Jetzt registrieren, um Stimmen abzugeben"
-              >
-                <span>Zum Abstimmen mit Email registrieren</span>
-                <ArrowRight className="w-3.5 h-3.5 animate-bounce-horizontal" />
-              </button>
+            {/* Prominent Badge with Arrow pointing to login if not registered, or Lock badge if closed */}
+            {isVotingClosed ? (
+              <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-semibold">
+                <Lock className="w-3.5 h-3.5 text-rose-400" />
+                <span>Abstimmung beendet</span>
+              </div>
+            ) : (
+              !currentVoter && (
+                <button
+                  onClick={onOpenVoterModal}
+                  className="hidden md:flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-gradient-to-r from-astro-cyan/20 via-astro-blue/20 to-astro-purple/20 border border-astro-cyan/50 text-astro-cyan hover:text-white text-xs font-semibold shadow-glow-cyan hover:scale-[1.02] transition-all cursor-pointer animate-pulse"
+                  title="Jetzt registrieren, um Stimmen abzugeben"
+                >
+                  <span>Zum Abstimmen mit Email registrieren</span>
+                  <ArrowRight className="w-3.5 h-3.5 animate-bounce-horizontal" />
+                </button>
+              )
             )}
 
             {/* Email verification reminder badge if logged in but unverified */}
